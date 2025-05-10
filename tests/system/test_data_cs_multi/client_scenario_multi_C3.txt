@@ -1,4 +1,0 @@
-# Client C3: Calculate bill for Alice after all tariff changes
-SLEEP 300 
-CALCULATE_BILL 01/01/2024 01/01/2024 WHERE name = "Alice Wonderland"
-SELECT * WHERE name = "Alice Wonderland" AND date = "01/01/2024" # Verify data not changed

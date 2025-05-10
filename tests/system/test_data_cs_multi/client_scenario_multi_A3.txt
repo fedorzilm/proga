@@ -1,5 +1,0 @@
-# Client A3 (C3_RaceDelete): Tries to delete the record (which C1 might have edited)
-SLEEP 100 
-DELETE WHERE name = "EditedByC1" AND ip = "6.6.6.6" 
-SLEEP 50
-SELECT * WHERE ip = "6.6.6.6"

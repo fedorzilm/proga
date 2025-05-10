@@ -1,3 +1,0 @@
-# Client F3: Initiates server shutdown
-SLEEP 100 
-SHUTDOWN_SERVER

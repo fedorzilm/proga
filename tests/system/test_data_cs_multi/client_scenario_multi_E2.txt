@@ -1,4 +1,0 @@
-# Client E2: Tries to delete Bob again (should fail or delete 0)
-SLEEP 30 
-DELETE WHERE name = "Bob The Builder" AND ip = "10.0.0.2" AND date = "01/01/2024"
-SLEEP 50

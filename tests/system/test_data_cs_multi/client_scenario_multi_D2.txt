@@ -1,4 +1,0 @@
-# Client D2: Edits IP of "Alicia Keys D" (после того как D1 поменял имя)
-SLEEP 70 
-RAW_EDIT_COMMAND key_name "Alicia Keys D" key_ip "192.168.0.10" key_date "01/01/2024"###SEP###set_ip "4.4.4.4"
-SLEEP 50

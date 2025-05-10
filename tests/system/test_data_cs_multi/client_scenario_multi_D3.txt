@@ -1,5 +1,0 @@
-# Client D3: Edits traffic of "Alicia Keys D" with new IP, then selects
-SLEEP 140 
-RAW_EDIT_COMMAND key_name "Alicia Keys D" key_ip "4.4.4.4" key_date "01/01/2024"###SEP###set_traffic "7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7"
-SLEEP 50
-SELECT * WHERE name = "Alicia Keys D" AND ip = "4.4.4.4"

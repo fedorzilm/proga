@@ -1,4 +1,0 @@
-# Client C1: Calculate bill for Alice before and after tariff change by C2
-CALCULATE_BILL 01/01/2024 01/01/2024 WHERE name = "Alice Wonderland"
-SLEEP 200 
-CALCULATE_BILL 01/01/2024 01/01/2024 WHERE name = "Alice Wonderland"

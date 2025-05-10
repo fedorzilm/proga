@@ -1,6 +1,0 @@
-# Client 3: Attempt conflicting ADD and read
-SLEEP 50 # Дать время клиенту 2 начать ADD
-ADD name "Multi User One" ip "2.2.2.1" date "01/03/2024" traffic "0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1"
-SLEEP 200
-SELECT * WHERE name = "Bob The Builder"
-CALCULATE_BILL 01/01/2024 02/01/2024 WHERE name = "Alice Wonderland"

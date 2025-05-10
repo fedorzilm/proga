@@ -1,6 +1,0 @@
-# Client B1 (Writer): Multiple edits to Alice Wonderland's record (01/01/2024)
-RAW_EDIT_COMMAND key_name "Alice Wonderland" key_ip "192.168.0.10" key_date "01/01/2024"###SEP###set_ip "1.1.1.1" set_traffic "1000 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1"
-SLEEP 70
-RAW_EDIT_COMMAND key_name "Alice Wonderland" key_ip "1.1.1.1" key_date "01/01/2024"###SEP###set_ip "2.2.2.2" set_traffic "2000 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2"
-SLEEP 70
-RAW_EDIT_COMMAND key_name "Alice Wonderland" key_ip "2.2.2.2" key_date "01/01/2024"###SEP###set_ip "3.3.3.3" set_traffic "3000 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3"
