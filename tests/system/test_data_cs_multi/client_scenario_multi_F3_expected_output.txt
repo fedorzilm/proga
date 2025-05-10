@@ -1,0 +1,14 @@
+TIMESTAMP_PLACEHOLDER [CF3] Batch Processing Started. Input: test_data_cs_multi/client_scenario_multi_F3.txt, Output: work_dir/client_output_multi_F3.txt
+----------------------------------------------------------------------
+
+TIMESTAMP_PLACEHOLDER [CF3] Query 1: SLEEP 100
+TIMESTAMP_PLACEHOLDER [CF3] Executing SLEEP 100ms
+TIMESTAMP_PLACEHOLDER [CF3] SLEEP finished.
+----------------------------------------------------------------------
+
+TIMESTAMP_PLACEHOLDER [CF3] Query 2: SHUTDOWN_SERVER
+TIMESTAMP_PLACEHOLDER [CF3] Server Response Status: Success
+Payload:
+Shutdown command acknowledged by server (custom proto).
+----------------------------------------------------------------------
+TIMESTAMP_PLACEHOLDER [CF3] Batch Processing Finished.

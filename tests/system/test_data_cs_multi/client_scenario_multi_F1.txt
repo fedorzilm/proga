@@ -1,0 +1,11 @@
+# Client F1: Active operations, some should complete, last one might be interrupted
+ADD name "F_User_Alpha" ip "20.1.1.1" date "01/01/2029" traffic "1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1"
+SLEEP 20
+LOAD_TARIFF tariff_alt_concurrent.cfg 
+SLEEP 20
+RAW_EDIT_COMMAND key_name "F_User_Alpha" key_ip "20.1.1.1" key_date "01/01/2029"###SEP###set_name "F_User_Alpha_Edited"
+SLEEP 20
+CALCULATE_BILL 01/01/2024 01/01/2024 WHERE name = "Alice Wonderland" 
+SLEEP 100 
+PING 
+SELECT * WHERE name = "F_User_Alpha_Edited"

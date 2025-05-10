@@ -1,0 +1,196 @@
+TIMESTAMP_PLACEHOLDER [C_SINGLE] Batch Processing Started. Input: test_data_cs_single/client_scenario_single.txt, Output: work_dir/client_actual_output_single.txt
+----------------------------------------------------------------------
+
+TIMESTAMP_PLACEHOLDER [C_SINGLE] Query 1: SELECT *
+TIMESTAMP_PLACEHOLDER [C_SINGLE] Server Response Status: Success
+Payload:
+name              ip              date        total_traffic   total_incoming  total_outgoing  
+--------------------------------------------------------------------------------------------
+Alice Wonderland  192.168.0.10    01/01/2024  1170            780             390             
+Bob The Builder   10.0.0.2        01/01/2024  2340            1560            780             
+Alice Wonderland  192.168.0.10    02/01/2024  546             364             182             
+Charlie Chaplin   192.168.0.11    01/02/2024  0               0               0               
+----------------------------------------------------------------------
+
+TIMESTAMP_PLACEHOLDER [C_SINGLE] Query 2: ADD name "Network User One" ip "8.8.8.8" date "08/08/2024" traffic "2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2"
+TIMESTAMP_PLACEHOLDER [C_SINGLE] Server Response Status: Success
+Payload:
+ADD OK (custom).
+----------------------------------------------------------------------
+
+TIMESTAMP_PLACEHOLDER [C_SINGLE] Query 3: SLEEP 100
+TIMESTAMP_PLACEHOLDER [C_SINGLE] Executing SLEEP 100ms
+TIMESTAMP_PLACEHOLDER [C_SINGLE] SLEEP finished.
+----------------------------------------------------------------------
+
+TIMESTAMP_PLACEHOLDER [C_SINGLE] Query 4: SELECT * WHERE name = "Network User One"
+TIMESTAMP_PLACEHOLDER [C_SINGLE] Server Response Status: Success
+Payload:
+name              ip              date        total_traffic   total_incoming  total_outgoing  
+--------------------------------------------------------------------------------------------
+Network User One  8.8.8.8         08/08/2024  96              48              48              
+----------------------------------------------------------------------
+
+TIMESTAMP_PLACEHOLDER [C_SINGLE] Query 5: CALCULATE_BILL 01/01/2024 01/01/2024 WHERE name = "Alice Wonderland"
+TIMESTAMP_PLACEHOLDER [C_SINGLE] Server Response Status: Success
+Payload:
+Calculated Bill: 885.00 (custom).
+----------------------------------------------------------------------
+
+TIMESTAMP_PLACEHOLDER [C_SINGLE] Query 6: DELETE WHERE ip = "10.0.0.2"
+TIMESTAMP_PLACEHOLDER [C_SINGLE] Server Response Status: Success
+Payload:
+1 record(s) deleted (custom).
+----------------------------------------------------------------------
+
+TIMESTAMP_PLACEHOLDER [C_SINGLE] Query 7: LOAD_TARIFF tariff_alt.cfg
+TIMESTAMP_PLACEHOLDER [C_SINGLE] Server Response Status: Success
+Payload:
+Tariff loaded from 'test_work_dir_cs_single_run/tariff_alt.cfg' (custom).
+----------------------------------------------------------------------
+
+TIMESTAMP_PLACEHOLDER [C_SINGLE] Query 8: PING
+TIMESTAMP_PLACEHOLDER [C_SINGLE] Server Response Status: Success
+Payload:
+PONG_CustomProto. Client data: C_SINGLE_PingDataFromClient
+----------------------------------------------------------------------
+
+TIMESTAMP_PLACEHOLDER [C_SINGLE] Query 9: CALCULATE_BILL 01/01/2024 01/01/2024 WHERE name = "Alice Wonderland"
+TIMESTAMP_PLACEHOLDER [C_SINGLE] Server Response Status: Success
+Payload:
+Calculated Bill: 117.00 (custom).
+----------------------------------------------------------------------
+
+TIMESTAMP_PLACEHOLDER [C_SINGLE] Query 10: RAW_EDIT_COMMAND key_name "Network User One" key_ip "8.8.8.8" key_date "08/08/2024"###SEP###set_ip "8.8.8.9" set_traffic "3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3"
+TIMESTAMP_PLACEHOLDER [C_SINGLE] Server Response Status: Success
+Payload:
+Record updated successfully (custom).
+----------------------------------------------------------------------
+
+TIMESTAMP_PLACEHOLDER [C_SINGLE] Query 11: SELECT * WHERE name = "Network User One" AND ip = "8.8.8.9"
+TIMESTAMP_PLACEHOLDER [C_SINGLE] Server Response Status: Success
+Payload:
+name              ip              date        total_traffic   total_incoming  total_outgoing  
+--------------------------------------------------------------------------------------------
+Network User One  8.8.8.9         08/08/2024  144             72              72              
+----------------------------------------------------------------------
+
+TIMESTAMP_PLACEHOLDER [C_SINGLE] Query 12: RAW_EDIT_COMMAND key_name "NonExistent User" key_ip "0.0.0.0" key_date "01/01/1999"###SEP###set_name "Ghost User"
+TIMESTAMP_PLACEHOLDER [C_SINGLE] Server Response Status: Error
+Payload:
+Server Error on RAW_EDIT_COMMAND: Record to edit not found by update_record (should have been caught earlier).
+----------------------------------------------------------------------
+
+TIMESTAMP_PLACEHOLDER [C_SINGLE] Query 13: RAW_EDIT_COMMAND key_name "Alice Wonderland" key_ip "192.168.0.10" key_date "01/01/2024"###SEP###set_name "Alicia Wonder"
+TIMESTAMP_PLACEHOLDER [C_SINGLE] Server Response Status: Success
+Payload:
+Record updated successfully (custom).
+----------------------------------------------------------------------
+
+TIMESTAMP_PLACEHOLDER [C_SINGLE] Query 14: SELECT * WHERE ip = "192.168.0.10" AND date = "01/01/2024"
+TIMESTAMP_PLACEHOLDER [C_SINGLE] Server Response Status: Success
+Payload:
+name            ip            date        total_traffic   total_incoming  total_outgoing  
+------------------------------------------------------------------------------------------
+Alicia Wonder   192.168.0.10  01/01/2024  1170            780             390             
+----------------------------------------------------------------------
+
+TIMESTAMP_PLACEHOLDER [C_SINGLE] Query 15: ADD name "john doe" ip "10.0.0.10" date "10/10/2024" traffic "1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0"
+TIMESTAMP_PLACEHOLDER [C_SINGLE] Server Response Status: Success
+Payload:
+ADD OK (custom).
+----------------------------------------------------------------------
+
+TIMESTAMP_PLACEHOLDER [C_SINGLE] Query 16: ADD name "Jane O'Malley" ip "10.0.0.11" date "11/10/2024" traffic "0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1"
+TIMESTAMP_PLACEHOLDER [C_SINGLE] Server Response Status: Success
+Payload:
+ADD OK (custom).
+----------------------------------------------------------------------
+
+TIMESTAMP_PLACEHOLDER [C_SINGLE] Query 17: ADD name "Иван Петров" ip "10.0.0.12" date "12/10/2024" traffic "1 1 0 0 1 1 0 0 1 1 0 0 1 1 0 0 1 1 0 0 1 1 0 0 1 1 0 0 1 1 0 0 1 1 0 0 1 1 0 0 1 1 0 0 1 1 0 0"
+TIMESTAMP_PLACEHOLDER [C_SINGLE] Server Response Status: Success
+Payload:
+ADD OK (custom).
+----------------------------------------------------------------------
+
+TIMESTAMP_PLACEHOLDER [C_SINGLE] Query 18: SLEEP 50
+TIMESTAMP_PLACEHOLDER [C_SINGLE] Executing SLEEP 50ms
+TIMESTAMP_PLACEHOLDER [C_SINGLE] SLEEP finished.
+----------------------------------------------------------------------
+
+TIMESTAMP_PLACEHOLDER [C_SINGLE] Query 19: SELECT * WHERE name = "alicia wonder"
+TIMESTAMP_PLACEHOLDER [C_SINGLE] Server Response Status: Success
+Payload:
+No records found (custom).
+----------------------------------------------------------------------
+
+TIMESTAMP_PLACEHOLDER [C_SINGLE] Query 20: SELECT * WHERE name = "Alicia Wonder"
+TIMESTAMP_PLACEHOLDER [C_SINGLE] Server Response Status: Success
+Payload:
+name            ip            date        total_traffic   total_incoming  total_outgoing  
+------------------------------------------------------------------------------------------
+Alicia Wonder   192.168.0.10  01/01/2024  1170            780             390             
+----------------------------------------------------------------------
+
+TIMESTAMP_PLACEHOLDER [C_SINGLE] Query 21: SELECT * WHERE name = "Jane O'Malley"
+TIMESTAMP_PLACEHOLDER [C_SINGLE] Server Response Status: Success
+Payload:
+name            ip            date        total_traffic   total_incoming  total_outgoing  
+------------------------------------------------------------------------------------------
+Jane O'Malley   10.0.0.11     11/10/2024  24              0               24              
+----------------------------------------------------------------------
+
+TIMESTAMP_PLACEHOLDER [C_SINGLE] Query 22: SELECT * WHERE name = "Иван Петров"
+TIMESTAMP_PLACEHOLDER [C_SINGLE] Server Response Status: Success
+Payload:
+name            ip            date        total_traffic   total_incoming  total_outgoing  
+------------------------------------------------------------------------------------------
+Иван Петров     10.0.0.12     12/10/2024  24              12              12              
+----------------------------------------------------------------------
+
+TIMESTAMP_PLACEHOLDER [C_SINGLE] Query 23: ADD name "ALICIA WONDER" ip "10.0.0.13" date "13/10/2024" traffic "1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1"
+TIMESTAMP_PLACEHOLDER [C_SINGLE] Server Response Status: Success
+Payload:
+ADD OK (custom).
+----------------------------------------------------------------------
+
+TIMESTAMP_PLACEHOLDER [C_SINGLE] Query 24: SELECT * WHERE name = "ALICIA WONDER"
+TIMESTAMP_PLACEHOLDER [C_SINGLE] Server Response Status: Success
+Payload:
+name            ip            date        total_traffic   total_incoming  total_outgoing  
+------------------------------------------------------------------------------------------
+ALICIA WONDER   10.0.0.13     13/10/2024  48              24              24              
+----------------------------------------------------------------------
+
+TIMESTAMP_PLACEHOLDER [C_SINGLE] Query 25: SELECT date, name, total_outgoing WHERE name CONTAINS "Wonder" OR name = "Network User One" OR name = "ALICIA WONDER" SORT BY total_outgoing DESC
+TIMESTAMP_PLACEHOLDER [C_SINGLE] Server Response Status: Success
+Payload:
+date        name              total_outgoing  
+---------------------------------------------
+01/01/2024  Alicia Wonder     390             
+02/01/2024  Alice Wonderland  182             
+08/08/2024  Network User One  72              
+13/10/2024  ALICIA WONDER     24              
+----------------------------------------------------------------------
+
+TIMESTAMP_PLACEHOLDER [C_SINGLE] Query 26: SELECT * SORT BY name ASC
+TIMESTAMP_PLACEHOLDER [C_SINGLE] Server Response Status: Success
+Payload:
+name              ip              date        total_traffic   total_incoming  total_outgoing  
+--------------------------------------------------------------------------------------------
+ALICIA WONDER     10.0.0.13       13/10/2024  48              24              24
+Alice Wonderland  192.168.0.10    02/01/2024  546             364             182             
+Alicia Wonder     192.168.0.10    01/01/2024  1170            780             390             
+Charlie Chaplin   192.168.0.11    01/02/2024  0               0               0               
+Jane O'Malley     10.0.0.11       11/10/2024  24              0               24
+Network User One  8.8.8.9         08/08/2024  144             72              72              
+john doe          10.0.0.10       10/10/2024  24              12              12
+Иван Петров       10.0.0.12       12/10/2024  24              12              12              
+----------------------------------------------------------------------
+
+TIMESTAMP_PLACEHOLDER [C_SINGLE] Query 27: SHUTDOWN_SERVER
+TIMESTAMP_PLACEHOLDER [C_SINGLE] Server Response Status: Success
+Payload:
+Shutdown command acknowledged by server (custom proto).
+----------------------------------------------------------------------
+TIMESTAMP_PLACEHOLDER [C_SINGLE] Batch Processing Finished.

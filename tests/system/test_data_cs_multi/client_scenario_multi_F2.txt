@@ -1,0 +1,7 @@
+# Client F2: Some operations, might be interrupted
+SLEEP 30 
+ADD name "F_User_Beta" ip "20.2.2.2" date "02/01/2029" traffic "2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2"
+SLEEP 30
+SELECT * WHERE name = "Bob The Builder"
+SLEEP 70 
+DELETE WHERE name = "Charlie Chaplin"

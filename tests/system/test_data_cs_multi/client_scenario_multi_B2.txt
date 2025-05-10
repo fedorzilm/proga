@@ -1,0 +1,7 @@
+# Client B2 (Reader1): Reads Alice's record multiple times, expecting to see changes
+SLEEP 30 
+SELECT ip, traffic_00 WHERE name = "Alice Wonderland" AND date = "01/01/2024" # Should see IP 1.1.1.1, traffic 1000/1
+SLEEP 70 
+SELECT ip, traffic_00 WHERE name = "Alice Wonderland" AND date = "01/01/2024" # Should see IP 2.2.2.2, traffic 2000/2
+SLEEP 70 
+SELECT ip, traffic_00 WHERE name = "Alice Wonderland" AND date = "01/01/2024" # Should see IP 3.3.3.3, traffic 3000/3

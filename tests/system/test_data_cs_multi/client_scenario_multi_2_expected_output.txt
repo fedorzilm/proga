@@ -1,0 +1,33 @@
+YYYY-MM-DD HH:MM:SS.mmm [C2] Batch Processing Started. Input: test_data_cs_multi/client_scenario_multi_2.txt, Output: work_dir/client_output_multi_2.txt
+----------------------------------------------------------------------
+
+YYYY-MM-DD HH:MM:SS.mmm [C2] Query 1: ADD name "Multi User One" ip "2.2.2.1" date "01/03/2024" traffic "1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0"
+YYYY-MM-DD HH:MM:SS.mmm [C2] Server Response Status: Success
+Payload:
+ADD OK (custom).
+----------------------------------------------------------------------
+
+YYYY-MM-DD HH:MM:SS.mmm [C2] Query 2: SLEEP 250
+YYYY-MM-DD HH:MM:SS.mmm [C2] Executing SLEEP 250ms
+YYYY-MM-DD HH:MM:SS.mmm [C2] SLEEP finished.
+----------------------------------------------------------------------
+
+YYYY-MM-DD HH:MM:SS.mmm [C2] Query 3: DELETE WHERE name = "Charlie Chaplin"
+YYYY-MM-DD HH:MM:SS.mmm [C2] Server Response Status: Success
+Payload:
+1 record(s) deleted (custom).
+----------------------------------------------------------------------
+
+YYYY-MM-DD HH:MM:SS.mmm [C2] Query 4: SLEEP 50
+YYYY-MM-DD HH:MM:SS.mmm [C2] Executing SLEEP 50ms
+YYYY-MM-DD HH:MM:SS.mmm [C2] SLEEP finished.
+----------------------------------------------------------------------
+
+YYYY-MM-DD HH:MM:SS.mmm [C2] Query 5: SELECT * WHERE name = "Multi User One"
+YYYY-MM-DD HH:MM:SS.mmm [C2] Server Response Status: Success
+Payload:
+name              ip              date        total_traffic   total_incoming  total_outgoing  
+--------------------------------------------------------------------------------------------
+Multi User One    2.2.2.1         01/03/2024  24              24              0               
+----------------------------------------------------------------------
+YYYY-MM-DD HH:MM:SS.mmm [C2] Batch Processing Finished.

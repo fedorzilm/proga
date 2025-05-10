@@ -1,0 +1,25 @@
+TIMESTAMP_PLACEHOLDER [CC2] Batch Processing Started. Input: test_data_cs_multi/client_scenario_multi_C2.txt, Output: work_dir/client_output_multi_C2.txt
+----------------------------------------------------------------------
+
+TIMESTAMP_PLACEHOLDER [CC2] Query 1: SLEEP 50
+TIMESTAMP_PLACEHOLDER [CC2] Executing SLEEP 50ms
+TIMESTAMP_PLACEHOLDER [CC2] SLEEP finished.
+----------------------------------------------------------------------
+
+TIMESTAMP_PLACEHOLDER [CC2] Query 2: LOAD_TARIFF tariff_alt_concurrent.cfg
+TIMESTAMP_PLACEHOLDER [CC2] Server Response Status: Success
+Payload:
+Tariff loaded from 'test_work_dir_cs_multi_scenario_C/tariff_alt_concurrent.cfg' (custom).
+----------------------------------------------------------------------
+
+TIMESTAMP_PLACEHOLDER [CC2] Query 3: SLEEP 50
+TIMESTAMP_PLACEHOLDER [CC2] Executing SLEEP 50ms
+TIMESTAMP_PLACEHOLDER [CC2] SLEEP finished.
+----------------------------------------------------------------------
+
+TIMESTAMP_PLACEHOLDER [CC2] Query 4: CALCULATE_BILL 01/01/2024 01/01/2024 WHERE name = "Bob The Builder"
+TIMESTAMP_PLACEHOLDER [CC2] Server Response Status: Success
+Payload:
+Calculated Bill: 468.00 (custom).
+----------------------------------------------------------------------
+TIMESTAMP_PLACEHOLDER [CC2] Batch Processing Finished.

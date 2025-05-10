@@ -1,0 +1,5 @@
+# Client C2: Waits a bit, loads new tariff, then calculates bill for Bob
+SLEEP 50 
+LOAD_TARIFF tariff_alt_concurrent.cfg
+SLEEP 50 
+CALCULATE_BILL 01/01/2024 01/01/2024 WHERE name = "Bob The Builder"

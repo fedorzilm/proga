@@ -1,0 +1,27 @@
+TIMESTAMP_PLACEHOLDER [CD3] Batch Processing Started. Input: test_data_cs_multi/client_scenario_multi_D3.txt, Output: work_dir/client_output_multi_D3.txt
+----------------------------------------------------------------------
+
+TIMESTAMP_PLACEHOLDER [CD3] Query 1: SLEEP 140
+TIMESTAMP_PLACEHOLDER [CD3] Executing SLEEP 140ms
+TIMESTAMP_PLACEHOLDER [CD3] SLEEP finished.
+----------------------------------------------------------------------
+
+TIMESTAMP_PLACEHOLDER [CD3] Query 2: RAW_EDIT_COMMAND key_name "Alicia Keys D" key_ip "4.4.4.4" key_date "01/01/2024"###SEP###set_traffic "7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7 7"
+TIMESTAMP_PLACEHOLDER [CD3] Server Response Status: Success
+Payload:
+Record updated successfully (custom).
+----------------------------------------------------------------------
+
+TIMESTAMP_PLACEHOLDER [CD3] Query 3: SLEEP 50
+TIMESTAMP_PLACEHOLDER [CD3] Executing SLEEP 50ms
+TIMESTAMP_PLACEHOLDER [CD3] SLEEP finished.
+----------------------------------------------------------------------
+
+TIMESTAMP_PLACEHOLDER [CD3] Query 4: SELECT * WHERE name = "Alicia Keys D" AND ip = "4.4.4.4"
+TIMESTAMP_PLACEHOLDER [CD3] Server Response Status: Success
+Payload:
+name            ip       date        total_traffic   total_incoming  total_outgoing  
+------------------------------------------------------------------------------------
+Alicia Keys D   4.4.4.4  01/01/2024  336             168             168             
+----------------------------------------------------------------------
+TIMESTAMP_PLACEHOLDER [CD3] Batch Processing Finished.

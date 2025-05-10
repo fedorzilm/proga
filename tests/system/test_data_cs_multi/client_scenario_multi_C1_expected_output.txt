@@ -1,0 +1,20 @@
+TIMESTAMP_PLACEHOLDER [CC1] Batch Processing Started. Input: test_data_cs_multi/client_scenario_multi_C1.txt, Output: work_dir/client_output_multi_C1.txt
+----------------------------------------------------------------------
+
+TIMESTAMP_PLACEHOLDER [CC1] Query 1: CALCULATE_BILL 01/01/2024 01/01/2024 WHERE name = "Alice Wonderland"
+TIMESTAMP_PLACEHOLDER [CC1] Server Response Status: Success
+Payload:
+Calculated Bill: 885.00 (custom).
+----------------------------------------------------------------------
+
+TIMESTAMP_PLACEHOLDER [CC1] Query 2: SLEEP 200
+TIMESTAMP_PLACEHOLDER [CC1] Executing SLEEP 200ms
+TIMESTAMP_PLACEHOLDER [CC1] SLEEP finished.
+----------------------------------------------------------------------
+
+TIMESTAMP_PLACEHOLDER [CC1] Query 3: CALCULATE_BILL 01/01/2024 01/01/2024 WHERE name = "Alice Wonderland"
+TIMESTAMP_PLACEHOLDER [CC1] Server Response Status: Success
+Payload:
+Calculated Bill: 234.00 (custom).
+----------------------------------------------------------------------
+TIMESTAMP_PLACEHOLDER [CC1] Batch Processing Finished.

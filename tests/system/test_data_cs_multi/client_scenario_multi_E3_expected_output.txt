@@ -1,0 +1,14 @@
+TIMESTAMP_PLACEHOLDER [CE3] Batch Processing Started. Input: test_data_cs_multi/client_scenario_multi_E3.txt, Output: work_dir/client_output_multi_E3.txt
+----------------------------------------------------------------------
+
+TIMESTAMP_PLACEHOLDER [CE3] Query 1: SLEEP 150
+TIMESTAMP_PLACEHOLDER [CE3] Executing SLEEP 150ms
+TIMESTAMP_PLACEHOLDER [CE3] SLEEP finished.
+----------------------------------------------------------------------
+
+TIMESTAMP_PLACEHOLDER [CE3] Query 2: SELECT * WHERE name = "Bob The Builder" AND ip = "10.0.0.2" AND date = "01/01/2024"
+TIMESTAMP_PLACEHOLDER [CE3] Server Response Status: Success
+Payload:
+No records found (custom).
+----------------------------------------------------------------------
+TIMESTAMP_PLACEHOLDER [CE3] Batch Processing Finished.

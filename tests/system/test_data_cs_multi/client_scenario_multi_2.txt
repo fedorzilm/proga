@@ -1,0 +1,6 @@
+# Client 2: Write and Read operations
+ADD name "Multi User One" ip "2.2.2.1" date "01/03/2024" traffic "1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0 1 0"
+SLEEP 250
+DELETE WHERE name = "Charlie Chaplin"
+SLEEP 50
+SELECT * WHERE name = "Multi User One"

@@ -1,0 +1,20 @@
+# Test queries for standalone batch mode
+SELECT *
+ADD name "New Standalone User" ip "7.7.7.7" date "07/07/2024" traffic "1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1"
+SELECT * WHERE name = "New Standalone User"
+
+# --- Ошибочные команды ---
+INVALID_COMMAND_XYZ # Неизвестная команда
+SELECT ip name # Ошибка синтаксиса: нет запятой
+ADD name "Bad Add" ip "not-an-ip" date "bad-date" traffic "1 2 3" # Невалидные данные
+DELETE # Отсутствуют условия WHERE
+CALCULATE_BILL 01/01/2024 # Недостаточно параметров
+LOAD_TARIFF non_existent_tariff_for_standalone_test.cfg # Несуществующий файл
+# --- Конец ошибочных команд ---
+
+CALCULATE_BILL 01/01/2024 01/01/2024 WHERE name = "Alice Wonderland"
+DELETE WHERE name = "Bob The Builder"
+LOAD_TARIFF tariff_alt.cfg
+CALCULATE_BILL 01/01/2024 01/01/2024 WHERE name = "Alice Wonderland"
+SELECT ip, name, date, total_traffic WHERE name CONTAINS "Wonderland" OR name = "New Standalone User" SORT BY date DESC
+SELECT * SORT BY name ASC

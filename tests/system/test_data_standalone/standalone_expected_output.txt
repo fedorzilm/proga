@@ -1,0 +1,87 @@
+TIMESTAMP_PLACEHOLDER [Batch] Processing Started. Input: test_data_standalone/standalone_queries.txt
+---------------------------------------------
+
+TIMESTAMP_PLACEHOLDER [Batch] Query 1: SELECT *
+Status: Success (4 data rows found).
+Results:
+name              ip            date        total_traffic  total_incoming  total_outgoing  
+------------------------------------------------------------------------------------------
+Alice Wonderland  192.168.0.10  01/01/2024  1170           780             390             
+Bob The Builder   10.0.0.2      01/01/2024  2340           1560            780             
+Alice Wonderland  192.168.0.10  02/01/2024  546            364             182             
+Charlie Chaplin   192.168.0.11  01/02/2024  0              0               0               
+---------------------------------------------
+
+TIMESTAMP_PLACEHOLDER [Batch] Query 2: ADD name "New Standalone User" ip "7.7.7.7" date "07/07/2024" traffic "1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1"
+Status: Record added successfully.
+---------------------------------------------
+
+TIMESTAMP_PLACEHOLDER [Batch] Query 3: SELECT * WHERE name = "New Standalone User"
+Status: Success (1 data rows found).
+Results:
+name                   ip       date        total_traffic  total_incoming  total_outgoing  
+------------------------------------------------------------------------------------------
+New Standalone User    7.7.7.7  07/07/2024  48             24              24              
+---------------------------------------------
+
+TIMESTAMP_PLACEHOLDER [Batch] Query 4: INVALID_COMMAND_XYZ
+Status: Unknown command 'invalid_command_xyz'.
+---------------------------------------------
+
+TIMESTAMP_PLACEHOLDER [Batch] Query 5: SELECT ip name
+Status: Error parsing SELECT query: SELECT ip name
+---------------------------------------------
+
+TIMESTAMP_PLACEHOLDER [Batch] Query 6: ADD name "Bad Add" ip "not-an-ip" date "bad-date" traffic "1 2 3"
+Status: Error parsing ADD command payload.
+---------------------------------------------
+
+TIMESTAMP_PLACEHOLDER [Batch] Query 7: DELETE
+Status: Error - DELETE command requires WHERE conditions.
+---------------------------------------------
+
+TIMESTAMP_PLACEHOLDER [Batch] Query 8: CALCULATE_BILL 01/01/2024
+Status: Error parsing CALCULATE_BILL command parameters. (Invalid end date: )
+---------------------------------------------
+
+TIMESTAMP_PLACEHOLDER [Batch] Query 9: LOAD_TARIFF non_existent_tariff_for_standalone_test.cfg
+Status: Failed to load tariff plan from 'non_existent_tariff_for_standalone_test.cfg' (check file existence and format).
+---------------------------------------------
+
+TIMESTAMP_PLACEHOLDER [Batch] Query 10: CALCULATE_BILL 01/01/2024 01/01/2024 WHERE name = "Alice Wonderland"
+Status: Success. Calculated Bill: 885.00
+---------------------------------------------
+
+TIMESTAMP_PLACEHOLDER [Batch] Query 11: DELETE WHERE name = "Bob The Builder"
+Status: 1 record(s) deleted.
+---------------------------------------------
+
+TIMESTAMP_PLACEHOLDER [Batch] Query 12: LOAD_TARIFF tariff_alt.cfg
+Status: Tariff plan loaded successfully from 'test_work_dir_standalone_batch/tariff_alt.cfg'.
+---------------------------------------------
+
+TIMESTAMP_PLACEHOLDER [Batch] Query 13: CALCULATE_BILL 01/01/2024 01/01/2024 WHERE name = "Alice Wonderland"
+Status: Success. Calculated Bill: 117.00
+---------------------------------------------
+
+TIMESTAMP_PLACEHOLDER [Batch] Query 14: SELECT ip, name, date, total_traffic WHERE name CONTAINS "Wonderland" OR name = "New Standalone User" SORT BY date DESC
+Status: Success (3 data rows found).
+Results:
+ip             name                   date        total_traffic  
+-----------------------------------------------------------------
+7.7.7.7        New Standalone User    07/07/2024  48             
+192.168.0.10   Alice Wonderland       02/01/2024  546            
+192.168.0.10   Alice Wonderland       01/01/2024  1170           
+---------------------------------------------
+
+TIMESTAMP_PLACEHOLDER [Batch] Query 15: SELECT * SORT BY name ASC
+Status: Success (4 data rows found). 
+Results:
+name                   ip            date        total_traffic  total_incoming  total_outgoing  
+------------------------------------------------------------------------------------------
+Alice Wonderland       192.168.0.10  01/01/2024  1170           780             390             
+Alice Wonderland       192.168.0.10  02/01/2024  546            364             182             
+Charlie Chaplin        192.168.0.11  01/02/2024  0              0               0               
+New Standalone User    7.7.7.7       07/07/2024  48             24              24              
+---------------------------------------------
+TIMESTAMP_PLACEHOLDER [Batch] Processing Finished.

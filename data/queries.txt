@@ -1,0 +1,70 @@
+# Comprehensive Batch Queries
+
+# --- Basic Selects ---
+# 1. Select all initial records
+SELECT *
+
+# 2. Select specific fields
+SELECT name, ip WHERE date = "01/05/2024"
+
+# --- WHERE Conditions ---
+# 3. Equality (name)
+SELECT * WHERE name = "Alice Smith"
+
+# 4. Inequality (ip)
+SELECT * WHERE ip != "10.0.0.5"
+
+# 5. Range (date) and AND
+SELECT name WHERE date >= "01/05/2024" AND date <= "01/05/2024"
+
+# 6. Contains (name) - Should find Ivan Ivanov
+SELECT name, date WHERE name CONTAINS "Ivan"
+
+# --- Sorting ---
+# 7. Sort by name DESC
+SELECT name, ip SORT BY name DESC
+
+# 8. Sort by traffic ASC
+SELECT name, total_traffic SORT BY total_traffic ASC
+
+# --- Add Operations ---
+# 9. Add another record for Ivan Ivanov (different date) - SUCCESS
+ADD name "Ivan Ivanov" ip "192.168.1.10" date "03/05/2024" traffic "100 50 100 50 100 50 100 50 100 50 100 50 100 50 100 50 100 50 100 50 100 50 100 50 100 50 100 50 100 50 100 50 100 50 100 50 100 50 100 50 100 50 100 50 100 50 100 50"
+
+# 10. Try adding existing Maria Petrova record - FAIL (Duplicate)
+ADD name "Maria Petrova" ip "10.0.0.5" date "01/05/2024" traffic "1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1"
+
+# 11. Select all records after ADD operations, sort by date
+SELECT * SORT BY date ASC
+
+# --- Billing ---
+# 12. Calculate bill for Maria (specific date, original tariff)
+CALCULATE_BILL 01/05/2024 01/05/2024 WHERE name = "Maria Petrova"
+
+# 13. Calculate bill for Ivan (multiple records, date range, original tariff)
+CALCULATE_BILL 01/05/2024 03/05/2024 WHERE name = "Ivan Ivanov"
+
+# 14. Calculate bill for specific IP (multiple users, date range, original tariff)
+CALCULATE_BILL 01/05/2024 02/05/2024 WHERE ip = "10.0.0.5"
+
+# --- Load Tariff ---
+# 15. Load alternative tariff plan
+LOAD_TARIFF data/tariff_alt.cfg
+
+# --- Billing with New Tariff ---
+# 16. Calculate bill for Maria again (should use new flat rate)
+CALCULATE_BILL 01/05/2024 01/05/2024 WHERE name = "Maria Petrova"
+
+# --- Delete Operations ---
+# 17. Delete John Doe (1 record)
+DELETE WHERE name = "John Doe"
+
+# 18. Delete Ivan Ivanov (should delete 2 records)
+DELETE WHERE ip = "192.168.1.10"
+
+# 19. Try deleting non-existent user (0 records)
+DELETE WHERE name = "No Such User"
+
+# --- Final State ---
+# 20. Select remaining records (Maria and Alice should be left)
+SELECT * SORT BY name ASC

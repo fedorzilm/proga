@@ -1,0 +1,22 @@
+TIMESTAMP_PLACEHOLDER [CA1] Batch Processing Started. Input: test_data_cs_multi/client_scenario_multi_A1.txt, Output: work_dir/client_output_multi_A1.txt
+----------------------------------------------------------------------
+
+TIMESTAMP_PLACEHOLDER [CA1] Query 1: RAW_EDIT_COMMAND key_name "Race Condition Target" key_ip "6.6.6.6" key_date "06/06/2026"###SEP###set_name "EditedByC1"
+TIMESTAMP_PLACEHOLDER [CA1] Server Response Status: Success
+Payload:
+Record updated successfully (custom).
+----------------------------------------------------------------------
+
+TIMESTAMP_PLACEHOLDER [CA1] Query 2: SLEEP 150
+TIMESTAMP_PLACEHOLDER [CA1] Executing SLEEP 150ms
+TIMESTAMP_PLACEHOLDER [CA1] SLEEP finished.
+----------------------------------------------------------------------
+
+TIMESTAMP_PLACEHOLDER [CA1] Query 3: SELECT * WHERE ip = "6.6.6.6"
+TIMESTAMP_PLACEHOLDER [CA1] Server Response Status: Success
+Payload:
+name            ip       date        total_traffic   total_incoming  total_outgoing  
+------------------------------------------------------------------------------------
+EditedByC1      6.6.6.6  06/06/2026  48              24              24              
+----------------------------------------------------------------------
+TIMESTAMP_PLACEHOLDER [CA1] Batch Processing Finished.

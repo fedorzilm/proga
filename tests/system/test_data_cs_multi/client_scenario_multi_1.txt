@@ -1,0 +1,5 @@
+# Client 1: Read-only operations
+SLEEP 100 # Дать другим клиентам шанс подключиться и начать работу
+SELECT * WHERE name = "Alice Wonderland"
+SLEEP 300
+SELECT ip, date WHERE date < "01/02/2024" SORT BY ip ASC
