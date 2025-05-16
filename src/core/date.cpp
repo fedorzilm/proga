@@ -1,20 +1,39 @@
-// Предполагаемый путь: src/core/date.cpp
-#include "date.h" // Предполагаемый путь: src/core/date.h
-#include "logger.h" // Предполагаемый путь: src/utils/logger.h
-#include <iomanip>  // Для std::setw, std::setfill
-#include <sstream>  // Для std::ostringstream, std::istringstream
-#include <array>    // Для std::array в validate
+/*!
+ * \file date.cpp
+ * \author Fedor Zilnitskiy
+ * \brief Реализация класса Date для работы с календарными датами.
+ */
+#include "date.h"
+#include "logger.h"     // Для возможного логирования, хотя в основном используются исключения
+#include <iomanip>      // Для std::setw, std::setfill при форматировании вывода
+#include <sstream>      // Для std::ostringstream (в toString) и std::istringstream (в operator>>)
+#include <array>        // Для массива дней в месяце в функции validate
 
-// Вспомогательная функция isLeap (может быть членом класса или свободной)
+/*!
+ * \brief Проверяет, является ли год високосным.
+ * \param y Год.
+ * \return true, если год високосный.
+ */
 bool Date::isLeap(int y) const noexcept {
+    // Стандартный алгоритм определения високосного года
     return (y % 4 == 0 && y % 100 != 0) || (y % 400 == 0);
 }
 
+/*!
+ * \brief Валидирует дату.
+ * \param d День.
+ * \param m Месяц.
+ * \param y Год.
+ * \throw std::invalid_argument Если дата некорректна.
+ */
 void Date::validate(int d, int m, int y) {
-    // Диапазоны взяты из ваших unit_tests (1900-2100)
-    if (y < 1900 || y > 2100) {
-        std::string error_msg = "Год " + std::to_string(y) + " вне допустимого диапазона (1900-2100).";
-        // Logger::warn("Date::validate: " + error_msg); // Логирование не всегда нужно для invalid_argument
+    // Диапазоны года (например, 1900-2100) могут быть вынесены в константы
+    const int MIN_YEAR = 1900;
+    const int MAX_YEAR = 2100; // Задано в тестах и описании задачи
+
+    if (y < MIN_YEAR || y > MAX_YEAR) {
+        std::string error_msg = "Год " + std::to_string(y) + " вне допустимого диапазона (" +
+                                std::to_string(MIN_YEAR) + "-" + std::to_string(MAX_YEAR) + ").";
         throw std::invalid_argument(error_msg);
     }
     if (m < 1 || m > 12) {
@@ -22,103 +41,130 @@ void Date::validate(int d, int m, int y) {
         throw std::invalid_argument(error_msg);
     }
 
-    const std::array<int, 13> daysInMonth = {0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
-    int days_in_current_month = daysInMonth.at(static_cast<size_t>(m));
+    // Массив для хранения количества дней в каждом месяце (0-й элемент не используется)
+    //                            Янв Фев Мар Апр Май Июн Июл Авг Сен Окт Ноя Дек
+    const std::array<int, 13> daysInMonth = {{0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31}};
+    int days_in_current_month = daysInMonth.at(static_cast<size_t>(m)); // at() для проверки границ индекса m
 
-    if (m == 2 && isLeap(y)) {
+    if (m == 2 && isLeap(y)) { // Февраль в високосный год
         days_in_current_month = 29;
     }
 
     if (d < 1 || d > days_in_current_month) {
         std::string error_msg = "День " + std::to_string(d) + " некорректен для месяца " + std::to_string(m) +
-                                " в году " + std::to_string(y) + ". Допустимо дней: " + std::to_string(days_in_current_month) + ".";
+                                " в году " + std::to_string(y) + ". Допустимо дней в этом месяце: " + std::to_string(days_in_current_month) + ".";
         throw std::invalid_argument(error_msg);
     }
 }
 
+/*!
+ * \brief Конструктор по умолчанию, дата 01.01.1970.
+ */
 Date::Date() noexcept : day_(1), month_(1), year_(1970) {
-    // Дата по умолчанию (01.01.1970) считается валидной и не требует вызова validate.
+    // Дата по умолчанию (01.01.1970) считается валидной и не требует вызова validate здесь,
+    // так как поля инициализируются корректными значениями.
 }
 
-Date::Date(int d, int m, int y) : day_(0), month_(0), year_(0) { // Инициализируем нулями перед валидацией
+/*!
+ * \brief Конструктор с параметрами дня, месяца, года.
+ * \param d День.
+ * \param m Месяц.
+ * \param y Год.
+ * \throw std::invalid_argument Если дата невалидна.
+ */
+Date::Date(int d, int m, int y) : day_(0), month_(0), year_(0) { // Инициализация нулями перед валидацией
     validate(d, m, y); // Валидация установит корректные значения или выбросит исключение
+    // Если validate не выбросил исключение, присваиваем значения
     day_ = d;
     month_ = m;
     year_ = y;
 }
 
+/*!
+ * \brief Преобразует дату в строку "ДД.ММ.ГГГГ".
+ * \return Строковое представление даты.
+ */
 std::string Date::toString() const {
     std::ostringstream oss;
     oss << std::setw(2) << std::setfill('0') << day_ << "."
         << std::setw(2) << std::setfill('0') << month_ << "."
-        << year_;
+        << year_; // Год выводится полностью
     return oss.str();
 }
 
+/*! \brief Оператор равенства. */
 bool Date::operator==(const Date& other) const noexcept {
     return year_ == other.year_ && month_ == other.month_ && day_ == other.day_;
 }
 
+/*! \brief Оператор неравенства. */
 bool Date::operator!=(const Date& other) const noexcept {
     return !(*this == other);
 }
 
+/*! \brief Оператор "меньше". */
 bool Date::operator<(const Date& other) const noexcept {
     if (year_ != other.year_) return year_ < other.year_;
     if (month_ != other.month_) return month_ < other.month_;
     return day_ < other.day_;
 }
 
+/*! \brief Оператор "больше". */
 bool Date::operator>(const Date& other) const noexcept {
-    return other < *this;
+    return other < *this; // Реализация через operator<
 }
 
+/*! \brief Оператор "меньше или равно". */
 bool Date::operator<=(const Date& other) const noexcept {
-    return !(*this > other);
+    return !(*this > other); // Реализация через operator>
 }
 
+/*! \brief Оператор "больше или равно". */
 bool Date::operator>=(const Date& other) const noexcept {
-    return !(*this < other);
+    return !(*this < other); // Реализация через operator<
 }
 
+/*!
+ * \brief Оператор вывода даты в поток.
+ * \param os Выходной поток.
+ * \param date Дата для вывода.
+ * \return Ссылка на выходной поток.
+ */
 std::ostream& operator<<(std::ostream& os, const Date& date) {
     os << date.toString();
     return os;
 }
 
+/*!
+ * \brief Оператор ввода даты из потока.
+ * Ожидает формат "ДД.ММ.ГГГГ".
+ * \param is Входной поток.
+ * \param date Дата для считывания.
+ * \return Ссылка на входной поток.
+ */
 std::istream& operator>>(std::istream& is, Date& date) {
     std::string s;
-    // Читаем "слово" из потока. Предполагается, что дата отделена пробелами.
     if (!(is >> s)) {
-        // Ошибка чтения или конец потока. is уже будет в состоянии fail.
-        return is;
+        return is; // Ошибка чтения или конец потока
     }
 
-    if (s.empty()) { // Маловероятно после is >> s, но для полноты
+    if (s.empty()) {
         is.setstate(std::ios_base::failbit);
         return is;
     }
 
     int d_in = 0, m_in = 0, y_in = 0;
     char dot1 = 0, dot2 = 0;
-    char extra_char = 0; // Для проверки лишних символов
 
     std::istringstream date_ss(s);
     date_ss >> d_in >> dot1 >> m_in >> dot2 >> y_in;
+    
+    date_ss >> std::ws; // Потребляем оставшиеся пробельные символы
 
-    // Проверяем, удалось ли считать все компоненты, корректны ли разделители,
-    // и нет ли лишних символов в строке s после даты.
-    if (date_ss.fail() || dot1 != '.' || dot2 != '.' || (date_ss.get(extra_char) && !date_ss.eof())) {
-        // date_ss.fail() - если разбор чисел или символов не удался
-        // (date_ss.get(extra_char) && !date_ss.eof()) - проверяет, остались ли неразобранные символы
+    if (date_ss.fail() || dot1 != '.' || dot2 != '.' || !date_ss.eof()) {
         is.setstate(std::ios_base::failbit); // Ошибка формата
         return is;
     }
-    // Если date_ss.eof() после >> y_in, это значит, что вся строка была успешно разобрана.
-    // Но если было date_ss >> y_in >> std::ws, и потом eof(), это тоже ок.
-    // Проверка date_ss.rdbuf()->in_avail() != 0 из ваших тестов - хороший способ.
-    // Или, после чтения y_in, попытаться прочитать еще что-то не пробельное.
-    // Текущая проверка с date_ss.get(extra_char) должна работать.
 
     try {
         Date temp_date(d_in, m_in, y_in); // Валидация произойдет в конструкторе temp_date
