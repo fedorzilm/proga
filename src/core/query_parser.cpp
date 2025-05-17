@@ -31,7 +31,7 @@ std::vector<std::string> QueryParser::tokenize(const std::string& queryString) c
     std::vector<std::string> tokens;
     std::string current_token_buffer;
     bool in_quote = false;
-    char prev_char = 0; // Для обработки экранированных кавычек, если потребуется (пока не используется)
+    // char prev_char = 0; // Для обработки экранированных кавычек, если потребуется (пока не используется)
 
     for (char ch : queryString) {
         if (in_quote) {
@@ -63,7 +63,7 @@ std::vector<std::string> QueryParser::tokenize(const std::string& queryString) c
                 current_token_buffer += ch;
             }
         }
-        prev_char = ch;
+        // prev_char = ch;
     }
 
     if (in_quote) { // Если цикл завершился, а мы все еще внутри кавычки

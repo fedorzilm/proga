@@ -23,6 +23,7 @@
 #include <random>           // Для std::mt19937, std::random_device, std::uniform_int_distribution, std::uniform_real_distribution
 #include <algorithm>        // Для std::generate_n (не используется в текущей версии, но может быть полезно)
 #include <stdexcept>        // Для std::runtime_error, std::invalid_argument, std::stoi, std::stod
+#include <ctime>            // Для std::time, std::localtime
 
 // --- Вспомогательные функции для генерации случайных данных ---
 
@@ -66,7 +67,7 @@ double random_double(double min_val, double max_val) {
     // uniform_real_distribution генерирует в [min, max)
     // Если нужно [min, max], можно немного скорректировать max_val или использовать другую технику.
     // Для простоты оставим стандартное поведение.
-    std::uniform_real_distribution<> distrib(min_val, max_val); 
+    std::uniform_real_distribution<> distrib(min_val, max_val);
     return distrib(get_random_engine());
 }
 
@@ -90,7 +91,7 @@ std::string generate_random_name() {
         "Егорович", "Максимович", "Никитич", "Олегович", "Павлович", "Романович", "Степанович", "Тимурович", "Федорович", "Юрьевич"
     };
     // Можно добавить женские отчества (Ивановна, Петровна и т.д.) и выбирать в зависимости от имени, но для простоты...
-    
+
     return last_names[static_cast<size_t>(random_int(0, static_cast<int>(last_names.size()) - 1))] + " " +
            first_names[static_cast<size_t>(random_int(0, static_cast<int>(first_names.size()) - 1))] + " " +
            patronymics[static_cast<size_t>(random_int(0, static_cast<int>(patronymics.size()) - 1))];
@@ -121,11 +122,11 @@ IPAddress generate_random_ip() {
 Date generate_random_date(int start_year = 2022, int end_year = 2024) {
     if (start_year > end_year) std::swap(start_year, end_year);
     // Цикл на случай, если Date конструктор выбросит исключение (хотя наша логика генерации дня должна это предотвращать)
-    while (true) { 
+    while (true) {
         try {
             int year = random_int(start_year, end_year);
             int month = random_int(1, 12);
-            
+
             int day_max = 28; // Безопасный минимум для февраля невисокосного года
             if (month == 2) {
                  bool leap = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
@@ -178,16 +179,22 @@ std::vector<double> generate_random_traffic(double max_gb_per_hour = 10.0) {
  */
 int main(int argc, char* argv[]) {
     // Инициализация логгера для генератора
-    Logger::init(LogLevel::INFO, DEFAULT_GENERATOR_LOG_FILE); 
+    Logger::init(LogLevel::INFO, DEFAULT_GENERATOR_LOG_FILE);
     const std::string gen_log_prefix = "[Generator] ";
     Logger::info(gen_log_prefix + "Запуск генератора тестовых данных для базы интернет-провайдера...");
 
+    // Получение текущего года (C++17 compatible)
+    std::time_t now_tt = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+    std::tm local_tm = *std::localtime(&now_tt); // или localtime_s/localtime_r для потокобезопасности
+    int current_year_val = local_tm.tm_year + 1900;
+
+
     if (argc < 3) {
-        std::string usage_msg = "Использование: " + std::string(argv[0]) + 
+        std::string usage_msg = "Использование: " + std::string(argv[0]) +
                                 " <количество_записей> <выходной_файл_данных> "
                                 "[макс_трафик_в_час_ГБ (по умолч: 10.0)] "
                                 "[начальный_год (по умолч: 2022)] "
-                                "[конечный_год (по умолч: " + std::to_string(std::chrono::year_month_day{std::chrono::floor<std::chrono::days>(std::chrono::system_clock::now())}.year()) + ")]";
+                                "[конечный_год (по умолч: " + std::to_string(current_year_val) + ")]";
         Logger::error(gen_log_prefix + "Недостаточно аргументов. " + usage_msg);
         std::cerr << usage_msg << std::endl;
         return 1;
@@ -215,36 +222,33 @@ int main(int argc, char* argv[]) {
     // Параметры по умолчанию
     double max_traffic_per_hour = 10.0; // ГБ
     int start_year_default = 2022;
-    // Конечный год по умолчанию - текущий год
-    auto current_time = std::chrono::system_clock::now();
-    std::chrono::year current_year_obj = std::chrono::year_month_day{std::chrono::floor<std::chrono::days>(current_time)}.year();
-    int end_year_default = static_cast<int>(current_year_obj);
-    if (end_year_default < start_year_default) end_year_default = start_year_default; // На случай если текущий год < 2022
+    int end_year_default = current_year_val;
+    if (end_year_default < start_year_default) end_year_default = start_year_default; 
 
     int start_year = start_year_default;
     int end_year = end_year_default;
 
     if (argc > 3) {
-        try { 
-            max_traffic_per_hour = std::stod(argv[3]); 
+        try {
+            max_traffic_per_hour = std::stod(argv[3]);
             if(max_traffic_per_hour < 0.0) {
                 Logger::warn(gen_log_prefix + "Максимальный трафик в час не может быть отрицательным (" + argv[3] + "). Используется значение по умолчанию: " + std::to_string(10.0));
                 max_traffic_per_hour = 10.0;
             }
         }
-        catch (const std::exception& e_stod_traffic) { 
+        catch (const std::exception& e_stod_traffic) {
             Logger::warn(gen_log_prefix + "Не удалось разобрать макс_трафик_в_час ('" + argv[3] + "'): " + e_stod_traffic.what() + ". Используется значение по умолчанию: " + std::to_string(max_traffic_per_hour));
         }
     }
     if (argc > 4) {
         try { start_year = std::stoi(argv[4]); }
-        catch (const std::exception& e_stoi_start_year) { 
+        catch (const std::exception& e_stoi_start_year) {
             Logger::warn(gen_log_prefix + "Не удалось разобрать начальный_год ('" + argv[4] + "'): " + e_stoi_start_year.what() + ". Используется значение по умолчанию: " + std::to_string(start_year));
         }
     }
     if (argc > 5) {
         try { end_year = std::stoi(argv[5]); }
-        catch (const std::exception& e_stoi_end_year) { 
+        catch (const std::exception& e_stoi_end_year) {
             Logger::warn(gen_log_prefix + "Не удалось разобрать конечный_год ('" + argv[5] + "'): " + e_stoi_end_year.what() + ". Используется значение по умолчанию: " + std::to_string(end_year));
         }
     }
@@ -253,12 +257,11 @@ int main(int argc, char* argv[]) {
         Logger::warn(gen_log_prefix + "Начальный год (" + std::to_string(start_year) + ") больше конечного (" + std::to_string(end_year) + "). Меняем их местами.");
         std::swap(start_year, end_year);
     }
-    // Проверка на разумность диапазона лет (например, не слишком далеко в прошлое/будущее относительно ограничений Date)
-    const int DATE_MIN_YEAR = 1900;
-    const int DATE_MAX_YEAR = 2100;
+    const int DATE_MIN_YEAR = 1900; // Согласовано с Date.cpp
+    const int DATE_MAX_YEAR = 2100; // Согласовано с Date.cpp
     if (start_year < DATE_MIN_YEAR) { Logger::warn(gen_log_prefix + "Начальный год " + std::to_string(start_year) + " меньше минимально допустимого " + std::to_string(DATE_MIN_YEAR) + ". Установлен в " + std::to_string(DATE_MIN_YEAR)); start_year = DATE_MIN_YEAR; }
     if (end_year > DATE_MAX_YEAR)   { Logger::warn(gen_log_prefix + "Конечный год " + std::to_string(end_year) + " больше максимально допустимого " + std::to_string(DATE_MAX_YEAR) + ". Установлен в " + std::to_string(DATE_MAX_YEAR));   end_year = DATE_MAX_YEAR; }
-    if (start_year > end_year) { // Если после коррекции start_year стал больше end_year
+    if (start_year > end_year) { 
         Logger::warn(gen_log_prefix + "После коррекции диапазона лет начальный год (" + std::to_string(start_year) + ") стал больше конечного (" + std::to_string(end_year) + "). Конечный год установлен равным начальному.");
         end_year = start_year;
     }
@@ -285,16 +288,14 @@ int main(int argc, char* argv[]) {
             std::vector<double> traffic_out = generate_random_traffic(max_traffic_per_hour);
 
             ProviderRecord record(name, ip, date, traffic_in, traffic_out);
-            outFile << record; // Используем operator<< для ProviderRecord
-            if (i < num_records - 1) { // Добавляем новую строку между записями, кроме последней
-                outFile << "\n"; 
+            outFile << record; 
+            if (i < num_records - 1) { 
+                outFile << "\n";
             }
         } catch (const std::exception& e_gen_record) {
-            // Ошибки от конструкторов Date, IPAddress, ProviderRecord (хотя они маловероятны с такой логикой генерации)
             Logger::error(gen_log_prefix + "Ошибка при генерации или записи записи #" + std::to_string(i+1) + ": " + e_gen_record.what());
-            // Можно решить, продолжать ли генерацию или прервать. Пока продолжаем.
         }
-        if (outFile.bad()) { // Проверка после каждой записи на случай ошибки IO
+        if (outFile.bad()) { 
             Logger::error(gen_log_prefix + "Произошла ошибка ввода-вывода при записи в файл '" + output_filename + "' после записи #" + std::to_string(i+1) + ". Генерация прервана.");
             std::cerr << "Ошибка: Запись в файл " << output_filename << " прервана из-за ошибки IO." << std::endl;
             outFile.close();
@@ -303,11 +304,9 @@ int main(int argc, char* argv[]) {
     }
 
     outFile.close();
-    // Проверка состояния потока после закрытия
-    if (!outFile.good()) { // good() проверяет !bad() && !fail()
+    if (!outFile.good()) { 
         Logger::error(gen_log_prefix + "Произошла ошибка при записи или корректном закрытии файла: '" + output_filename + "'. Файл может быть неполным или поврежден.");
         std::cerr << "Предупреждение: Запись в файл " << output_filename << " могла завершиться некорректно." << std::endl;
-        // Не возвращаем код ошибки, так как файл мог быть частично записан и это может быть приемлемо.
     } else {
          Logger::info(gen_log_prefix + "Успешно сгенерировано " + std::to_string(num_records) + " записей в файл '" + output_filename + "'");
          std::cout << "Успешно сгенерировано " << num_records << " записей в файл: " << output_filename << std::endl;

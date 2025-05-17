@@ -6,6 +6,7 @@
 #include "tariff_plan.h"    // Тарифный план
 #include "query_parser.h"   // Парсер запросов (может быть и не нужен здесь, если Server его не требует в конструктор)
 #include "server.h"         // Наш класс Server
+#include "server_config.h"  // <<<<<<<<<<< ADDED: Include ServerConfig header
 
 #include <iostream>
 #include <string>
@@ -23,12 +24,9 @@ std::atomic<bool> g_server_should_stop(false);
 #ifndef _WIN32 // POSIX-специфичная обработка сигналов
 void signalHandler(int signum) {
     std::string msg = "[ServerMain] Signal (" + std::to_string(signum) + ") received. Requesting server shutdown.";
-    // Прямой вывод в stderr, т.к. Logger может использовать мьютексы, что небезопасно в обработчике сигнала
-    // Однако, если Logger::log_internal реализован безопасно для сигналов (например, пишет в pipe), то можно.
-    // Для простоты и надежности - прямой вывод или установка флага.
-    write(STDERR_FILENO, "\n", 1); // Новая строка для чистоты вывода
-    write(STDERR_FILENO, msg.c_str(), msg.length());
-    write(STDERR_FILENO, "\n", 1);
+    (void)write(STDERR_FILENO, "\n", 1); // Новая строка для чистоты вывода
+    (void)write(STDERR_FILENO, msg.c_str(), msg.length());
+    (void)write(STDERR_FILENO, "\n", 1);
     g_server_should_stop.store(true);
 }
 
@@ -69,12 +67,14 @@ BOOL WINAPI consoleCtrlHandler(DWORD ctrlType) {
 
 
 int main(int argc, char* argv[]) {
-    Logger::init(LogLevel::DEBUG); // Инициализируем логгер с уровнем DEBUG по умолчанию
+    ServerConfig server_config; 
+    server_config.log_level = LogLevel::DEBUG; 
+
+    Logger::init(server_config.log_level, server_config.log_file_path); 
     Logger::info("=================================================");
     Logger::info("========== Запуск Сервера Базы Данных ==========");
     Logger::info("=================================================");
 
-    // Установка обработчиков сигналов/событий консоли
 #ifndef _WIN32
     setup_signal_handlers();
 #else
@@ -85,77 +85,68 @@ int main(int argc, char* argv[]) {
     }
 #endif
 
-    int port = 12345;
-    std::string arg_tariff_file_path = "";
-    std::string arg_server_data_dir = ""; // Директория для LOAD/SAVE на сервере
     std::string server_executable_full_path = (argc > 0 && argv[0] != nullptr) ? std::filesystem::weakly_canonical(std::filesystem::absolute(argv[0])).string() : "";
 
-
-    // --- Парсинг аргументов командной строки ---
-    for (int i = 1; i < argc; ++i) {
-        std::string arg = argv[i];
-        if ((arg == "-p" || arg == "--port") && i + 1 < argc) {
-            try {
-                port = std::stoi(argv[++i]);
-                if (port <= 0 || port > 65535) {
-                     Logger::error("[ServerMain] Неверный номер порта: " + std::to_string(port) + ". Должен быть в диапазоне 1-65535.");
-                     return 1;
-                }
-            } catch (const std::exception& e) {
-                Logger::error("[ServerMain] Ошибка парсинга номера порта '" + std::string(argv[i]) + "': " + e.what());
-                return 1;
-            }
-        } else if ((arg == "-t" || arg == "--tariff") && i + 1 < argc) {
-            arg_tariff_file_path = argv[++i];
-        } else if ((arg == "-d" || arg == "--data-dir") && i + 1 < argc) {
-            arg_server_data_dir = argv[++i];
-        } else if ((arg == "-l" || arg == "--log-level") && i + 1 < argc) {
-            std::string level_str = argv[++i];
-            std::transform(level_str.begin(), level_str.end(), level_str.begin(), ::toupper);
-            if (level_str == "DEBUG") Logger::setLevel(LogLevel::DEBUG);
-            else if (level_str == "INFO") Logger::setLevel(LogLevel::INFO);
-            else if (level_str == "WARN") Logger::setLevel(LogLevel::WARN);
-            else if (level_str == "ERROR") Logger::setLevel(LogLevel::ERROR);
-            else if (level_str == "NONE") Logger::setLevel(LogLevel::NONE);
-            else Logger::warn("[ServerMain] Неизвестный уровень логирования: " + level_str + ". Используется текущий.");
-        } else if (arg == "-h" || arg == "--help") {
-            // Используем std::cout для help, т.к. Logger может быть настроен на NONE
-            std::cout << "Использование: database_server [опции]\n";
-            std::cout << "Опции:\n";
-            std::cout << "  -p, --port <номер_порта>    Установить порт сервера (по умолч.: 12345)\n";
-            std::cout << "  -t, --tariff <путь_к_файлу> Путь к файлу тарифов (относительно CWD или абсолютный)\n";
-            std::cout << "  -d, --data-dir <путь_к_дир> Корневая директория для файлов БД сервера (LOAD/SAVE)\n"
-                      << "                                (по умолч.: PROJECT_ROOT/" << DEFAULT_SERVER_DATA_SUBDIR << " или CWD/" << DEFAULT_SERVER_DATA_SUBDIR << ")\n";
-            std::cout << "  -l, --log-level <LEVEL>     Уровень логирования (DEBUG, INFO, WARN, ERROR, NONE)\n";
-            std::cout << "  -h, --help                  Показать это справочное сообщение\n";
-            return 0;
+    std::string default_config_file_path;
+    if (!server_executable_full_path.empty()) {
+        std::filesystem::path exec_dir = std::filesystem::path(server_executable_full_path).parent_path();
+        if (std::filesystem::exists(exec_dir / "server.conf")) {
+            default_config_file_path = (exec_dir / "server.conf").string();
         } else {
-            Logger::error("[ServerMain] Неизвестный аргумент или неверное использование: " + arg);
-            return 1;
+            if (std::filesystem::exists(exec_dir.parent_path() / "server.conf")) {
+                 default_config_file_path = (exec_dir.parent_path() / "server.conf").string();
+            } else {
+                 if (std::filesystem::exists(exec_dir.parent_path().parent_path() / "server.conf")) {
+                    default_config_file_path = (exec_dir.parent_path().parent_path() / "server.conf").string();
+                 }
+            }
         }
     }
-    Logger::info("[ServerMain] Конфигурация сервера: Порт=" + std::to_string(port) +
-                 ", Файл тарифа (арг)='" + arg_tariff_file_path +
-                 "', Директория данных (арг)='" + arg_server_data_dir +
-                 "', Уровень лога=" + std::to_string(static_cast<int>(Logger::getLevel())) );
+    if (!default_config_file_path.empty()) {
+        Logger::info("[ServerMain] Attempting to load default configuration file: " + default_config_file_path);
+        server_config.loadFromFile(default_config_file_path); 
+    } else {
+        Logger::info("[ServerMain] Default configuration file 'server.conf' not found in typical locations. Using default values and command-line arguments.");
+    }
+
+
+    if (!server_config.parseCommandLineArgs(argc, argv, server_executable_full_path)) {
+        if (argc > 1 && (std::string(argv[argc-1]) == "-h" || std::string(argv[argc-1]) == "--help") ) {
+             return 0; 
+        }
+        return 1; 
+    }
+
+    Logger::init(server_config.log_level, server_config.log_file_path);
+
+    Logger::info("[ServerMain] Итоговая конфигурация сервера:");
+    Logger::info("[ServerMain]   Порт: " + std::to_string(server_config.port));
+    Logger::info("[ServerMain]   Файл тарифов: '" + server_config.tariff_file_path + "'");
+    Logger::info("[ServerMain]   Директория данных сервера: '" + server_config.server_data_root_dir + "'");
+    Logger::info("[ServerMain]   Размер пула потоков: " + std::to_string(server_config.thread_pool_size));
+    Logger::info("[ServerMain]   Уровень лога: " + std::to_string(static_cast<int>(Logger::getLevel())));
+    Logger::info("[ServerMain]   Файл лога: '" + (server_config.log_file_path.empty() ? "Только консоль" : server_config.log_file_path) + "'");
+
 
     Database db_instance;
     TariffPlan tariff_plan_instance;
-    QueryParser query_parser_instance; // QueryParser stateless, можно один на сервер
+    QueryParser query_parser_instance;
 
-    // --- Загрузка тарифного плана ---
-    std::string effectiveTariffPathToLoad;
-    if (!arg_tariff_file_path.empty()) {
-        effectiveTariffPathToLoad = std::filesystem::weakly_canonical(std::filesystem::absolute(arg_tariff_file_path)).string();
-        Logger::info("[ServerMain] Используется указанный файл тарифов: " + effectiveTariffPathToLoad);
-    } else {
-        try {
+    std::string effectiveTariffPathToLoad = server_config.tariff_file_path;
+    if (effectiveTariffPathToLoad.empty()) { 
+         try {
             effectiveTariffPathToLoad = getProjectDataPath("tariff_default.cfg", server_executable_full_path.c_str()).string();
-            Logger::info("[ServerMain] Попытка загрузки тарифа по умолчанию: " + effectiveTariffPathToLoad);
+            Logger::info("[ServerMain] Файл тарифов не указан, попытка загрузки тарифа по умолчанию: " + effectiveTariffPathToLoad);
         } catch (const std::exception& e) {
             Logger::warn("[ServerMain] Не удалось определить путь к тарифу по умолчанию: " + std::string(e.what()));
         }
+    } else { 
+        if (!std::filesystem::path(effectiveTariffPathToLoad).is_absolute() && !server_executable_full_path.empty()) {
+            effectiveTariffPathToLoad = (std::filesystem::path(server_executable_full_path).parent_path() / effectiveTariffPathToLoad).lexically_normal().string();
+            Logger::info("[ServerMain] Относительный путь к файлу тарифов '" + server_config.tariff_file_path + "' разрешен в: " + effectiveTariffPathToLoad);
+        }
     }
+
 
     if (!effectiveTariffPathToLoad.empty() && std::filesystem::exists(effectiveTariffPathToLoad)) {
         try {
@@ -166,43 +157,28 @@ int main(int argc, char* argv[]) {
             Logger::warn("[ServerMain] Команда CALCULATE_CHARGES будет использовать нулевые тарифы.");
         }
     } else {
-        Logger::warn("[ServerMain] Файл тарифов не найден (указанный или по умолчанию: '" + effectiveTariffPathToLoad +
+        Logger::warn("[ServerMain] Файл тарифов не найден (указанный: '" + server_config.tariff_file_path +"' или по умолчанию: '" + effectiveTariffPathToLoad +
                      "'). Команда CALCULATE_CHARGES будет использовать нулевые тарифы.");
     }
 
-    // --- Определение базовой директории данных сервера для ServerCommandHandler ---
-    std::string server_command_handler_base_path;
-    if (!arg_server_data_dir.empty()) {
-        // Если указан путь к директории данных, делаем его абсолютным и используем
-        server_command_handler_base_path = std::filesystem::weakly_canonical(std::filesystem::absolute(arg_server_data_dir)).string();
-        Logger::info("[ServerMain] Используется указанная директория данных для операций LOAD/SAVE: " + server_command_handler_base_path);
-    } else {
-        // Если не указан, используем путь на основе server_executable_full_path (для getProjectRootPath)
-        // ServerCommandHandler будет добавлять DEFAULT_SERVER_DATA_SUBDIR к этому пути
-        server_command_handler_base_path = server_executable_full_path;
-        Logger::info("[ServerMain] Директория данных для LOAD/SAVE будет определена ServerCommandHandler на основе пути сервера: " + server_command_handler_base_path);
-    }
-
-    // Создание и запуск сервера
-    Server server(port, db_instance, tariff_plan_instance, query_parser_instance, server_command_handler_base_path);
+    Server server(server_config, db_instance, tariff_plan_instance, query_parser_instance, server_executable_full_path);
     if (!server.start()) {
-        Logger::error("[ServerMain] КРИТИЧЕСКАЯ ОШИБКА: Не удалось запустить сервер на порту " + std::to_string(port) + ".");
+        Logger::error("[ServerMain] КРИТИЧЕСКАЯ ОШИБКА: Не удалось запустить сервер на порту " + std::to_string(server_config.port) + ".");
         return 1;
     }
 
     Logger::info("[ServerMain] Сервер успешно запущен. Ожидание соединений или сигнала завершения (Ctrl+C)...");
 
-    // Основной цикл ожидания сигнала завершения
     while (!g_server_should_stop.load()) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(200)); // Проверяем флаг периодически
+        std::this_thread::sleep_for(std::chrono::milliseconds(200)); 
         if (!server.isRunning() && !g_server_should_stop.load()) {
             Logger::warn("[ServerMain] Обнаружено, что сервер неактивен, но сигнал остановки не получен. Инициирую остановку.");
-            g_server_should_stop.store(true); // Инициировать остановку
+            g_server_should_stop.store(true); 
         }
     }
 
     Logger::info("[ServerMain] Получен сигнал остановки или сервер завершил работу. Инициирована процедура остановки экземпляра Server...");
-    server.stop(); // Запускает процесс остановки сервера (закрытие сокетов, join потоков)
+    server.stop(); 
 
     Logger::info("========== Сервер Базы Данных Завершил Работу ==========");
     return 0;

@@ -72,7 +72,7 @@ bool ServerConfig::loadFromFile(const std::string& config_filename) {
                 continue;
             }
             // Пустое значение может быть валидным для некоторых параметров (например, сброс пути к файлу лога)
-            
+
             std::string key_upper = toUpperSC(key);
             Logger::debug("ServerConfig: Чтение из конфига: Ключ='" + key + "', Значение='" + value + "'");
 
@@ -160,37 +160,38 @@ void ServerConfig::printHelp(const char* app_name_char) {
  * \param server_executable_path Путь к исполняемому файлу (используется для поиска конфига по умолчанию).
  * \return true если парсинг успешен, false при ошибке или запросе справки.
  */
-bool ServerConfig::parseCommandLineArgs(int argc, char* argv[], const std::string& server_executable_path) {
+bool ServerConfig::parseCommandLineArgs(int argc, char* argv[], [[maybe_unused]] const std::string& server_executable_path) {
     // Сначала ищем аргумент -c или --config, чтобы загрузить его первым, если он есть.
     // Этот конфиг будет базовым, который затем может быть переопределен другими аргументами командной строки.
+    // server_executable_path здесь не используется, т.к. предполагается, что loadFromFile(default_config)
+    // уже был вызван в main с использованием server_executable_path.
+    // Эта функция только переопределяет значения.
+
     std::string config_file_from_args;
     for (int i = 1; i < argc; ++i) {
         std::string arg_str = argv[i];
         if ((arg_str == "-c" || arg_str == "--config")) {
             if (i + 1 < argc) {
-                config_file_from_args = argv[++i]; // Берем следующий аргумент как имя файла
-                Logger::info("ServerConfig Args: Указан файл конфигурации из командной строки: '" + config_file_from_args + "'");
+                config_file_from_args = argv[++i]; 
+                Logger::info("ServerConfig Args: Указан файл конфигурации из командной строки: '" + config_file_from_args + "' для переопределения.");
                 if (!std::filesystem::exists(config_file_from_args)) {
                      Logger::error("ServerConfig Args: Указанный файл конфигурации '" + config_file_from_args + "' не найден.");
                      // Не выходим, позволяем другим аргументам работать, но это ошибка.
-                     // Можно решить, что это фатальная ошибка. Пока просто лог.
-                     // return false; // Если считать это фатальной ошибкой
                 } else {
+                    // Загружаем этот файл, он переопределит то, что было загружено ранее (например, дефолтный server.conf)
                     if (!loadFromFile(config_file_from_args)) {
-                        // Ошибка парсинга файла, указанного в командной строке. Это фатально.
                         Logger::error("ServerConfig Args: Ошибка загрузки/парсинга файла конфигурации '" + config_file_from_args + "', указанного в командной строке. Завершение.");
-                        return false; 
+                        return false;
                     }
                 }
             } else {
                 Logger::error("ServerConfig Args: Опция '" + arg_str + "' требует аргумент (путь к файлу).");
                 return false;
             }
-            // После обработки -c/--config, его не нужно обрабатывать в основном цикле ниже.
-            // Но это усложнит логику, если он встретится не первым.
-            // Проще: loadFromFile вызывается до parseCommandLineArgs в main,
-            // а здесь parseCommandLineArgs просто переопределяет значения.
-            break; // Предполагаем, что -c/--config указывается один раз
+            // Пропускаем дальнейшую обработку этого аргумента в цикле ниже
+            // Это можно сделать, увеличивая i здесь или проверяя в цикле ниже.
+            // Для простоты, предполагаем, что основной цикл обработает его снова, но без эффекта, если ключ тот же.
+             break; 
         }
     }
 
@@ -251,18 +252,13 @@ bool ServerConfig::parseCommandLineArgs(int argc, char* argv[], const std::strin
              if (i + 1 < argc) { log_file_path = argv[++i]; Logger::debug("ServerConfig Args: Файл лога установлен из командной строки: " + log_file_path); }
             else { Logger::error("ServerConfig Args: Опция '" + arg + "' требует аргумент (путь к файлу)."); return false;}
         } else if (arg == "-h" || arg == "--help") {
-            // Уже должно быть обработано в main, но если нет:
-            // printHelp(argv[0]); // Вывод справки не здесь, а в main
-            return false; // Сигнализируем, что нужно показать справку и выйти.
+            return false; 
         } else if ((arg == "-c" || arg == "--config")) {
-            // Аргумент -c/--config и его значение уже должны были быть обработаны, если он был первым.
-            // Если он не первый, то он мог быть пропущен. Чтобы избежать двойной обработки, пропускаем его здесь.
-            if (i + 1 < argc) { ++i; } // Пропускаем значение, если оно есть
+            if (i + 1 < argc) { ++i; } 
         } else {
-            // Неизвестный аргумент
             Logger::error("ServerConfig Args: Неизвестный аргумент командной строки: " + arg);
-            return false; // Ошибка
+            return false; 
         }
     }
-    return true; // Успешный парсинг аргументов
+    return true; 
 }

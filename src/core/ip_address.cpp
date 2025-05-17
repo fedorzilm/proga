@@ -135,7 +135,7 @@ std::istream& operator>>(std::istream& is, IPAddress& ip) {
 
     int o1_in = 0, o2_in = 0, o3_in = 0, o4_in = 0;
     char dot1 = 0, dot2 = 0, dot3 = 0;
-    char extra_char_check = 0; // Для проверки лишних символов в конце строки
+    // char extra_char_check = 0; // Для проверки лишних символов в конце строки
 
     std::istringstream ip_ss(s); // Используем строковый поток для разбора строки s
     

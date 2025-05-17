@@ -13,20 +13,20 @@
 #define SERVER_H
 
 #include "common_defs.h"    // Включает <atomic>, <vector>, <thread>, <mutex>, <shared_mutex>, <memory>, <string>
-#include "database.h"       
-#include "tariff_plan.h"    
-#include "query_parser.h"   
-#include "tcp_socket.h"     
-#include "thread_pool.h"    
-#include "server_config.h"  
+#include "database.h"
+#include "tariff_plan.h"
+#include "query_parser.h"
+#include "tcp_socket.h"
+#include "thread_pool.h"
+#include "server_config.h"
 
 #include <string>
 #include <vector>
 #include <thread>
 #include <mutex>
-#include <shared_mutex> 
+#include <shared_mutex>
 #include <atomic>
-#include <memory> // Для std::unique_ptr
+#include <memory> // Для std::unique_ptr и std::shared_ptr
 
 /*!
  * \brief Глобальный атомарный флаг для запроса остановки сервера.
@@ -66,8 +66,8 @@ public:
            Database& db,
            TariffPlan& plan,
            QueryParser& parser,
-           const std::string& server_executable_path); 
-    
+           const std::string& server_executable_path);
+
     /*!
      * \brief Деструктор сервера.
      * Гарантирует корректную остановку сервера, включая остановку пула потоков
@@ -97,31 +97,31 @@ public:
      * \brief Проверяет, активен ли сервер в данный момент.
      * \return `true`, если сервер запущен и работает (не находится в процессе остановки), иначе `false`.
      */
-    bool isRunning() const noexcept { return running_.load(); } // Добавлено noexcept
+    bool isRunning() const noexcept { return running_.load(); } 
 
 
 private:
     /*! \brief Основной цикл потока, принимающего новые клиентские соединения. */
-    void acceptorThreadLoop(); 
-    
-    /*! 
+    void acceptorThreadLoop();
+
+    /*!
      * \brief Задача, выполняемая в пуле потоков для обработки одного клиента.
      * Получает запросы от клиента, передает их в `ServerCommandHandler` и отправляет ответы.
-     * \param client_socket Объект `TCPSocket` для взаимодействия с конкретным клиентом (передается по значению и перемещается).
+     * \param client_socket_sptr Умный указатель (shared_ptr) на объект `TCPSocket` для взаимодействия с конкретным клиентом.
      */
-    void clientHandlerTask(TCPSocket client_socket); 
+    void clientHandlerTask(std::shared_ptr<TCPSocket> client_socket_sptr);
 
     const ServerConfig& config_;        /*!< Ссылка на неизменяемую конфигурацию сервера. */
     Database& db_;                      /*!< Ссылка на общий экземпляр базы данных. */
     TariffPlan& tariff_plan_;           /*!< Ссылка на общий экземпляр тарифного плана. */
     QueryParser& query_parser_;         /*!< Ссылка на общий экземпляр парсера запросов. */
-    
+
     std::string server_base_path_for_commands_; /*!< Базовый путь, используемый ServerCommandHandler для файловых операций (LOAD/SAVE). Определяется из config или server_executable_path. */
 
     TCPSocket listen_socket_{};           /*!< Слушающий сокет сервера. */
-    
+
     std::unique_ptr<ThreadPool> thread_pool_; /*!< Умный указатель на пул потоков для обработки клиентских задач. */
-    
+
     // Мьютекс для защиты доступа к Database.
     // Используется shared_mutex для разрешения одновременного чтения несколькими потоками
     // и эксклюзивного доступа для операций записи.

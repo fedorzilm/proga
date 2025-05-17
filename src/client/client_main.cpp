@@ -101,7 +101,7 @@ bool process_single_request_to_server(TCPSocket& socket, const std::string& quer
     out_stream_for_response << response;
     // Дополнительный перевод строки для вывода в консоль, если ответ его не содержит, для лучшей читаемости.
     if (!response.empty() && response.back() != '\n' && (&out_stream_for_response == &std::cout)) {
-         out_stream_for_response << "\n"; 
+         out_stream_for_response << "\n";
     }
     // Можно добавить разделитель в интерактивном режиме для визуального отделения ответов
     if (&out_stream_for_response == &std::cout && !response.empty()) {
@@ -120,7 +120,7 @@ int main(int argc, char* argv[]) {
     // 1. Начальная инициализация логгера (уровень INFO, файл по умолчанию).
     // Это позволит логировать процесс парсинга аргументов.
     // Файл лога и уровень могут быть переопределены аргументами командной строки.
-    Logger::init(LogLevel::INFO, DEFAULT_CLIENT_LOG_FILE); 
+    Logger::init(LogLevel::INFO, DEFAULT_CLIENT_LOG_FILE);
     const std::string client_log_prefix = "[ClientMain] "; // Префикс для логов из main
     Logger::info(client_log_prefix + "===================================================");
     Logger::info(client_log_prefix + "====== Клиент Базы Данных Интернет-Провайдера ======");
@@ -142,7 +142,7 @@ int main(int argc, char* argv[]) {
         Logger::info(client_log_prefix + "Завершение работы: не указаны аргументы (кроме, возможно, имени программы).");
         return 1; // Завершение с ошибкой, так как -s обязателен
     }
-    
+
     // Сначала проверяем на -h / --help, так как это завершает программу
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -200,15 +200,11 @@ int main(int argc, char* argv[]) {
         } else if (arg == "--log-file" && i + 1 < argc) {
             client_log_file = argv[++i];
         }
-        // Аргументы -h/--help уже обработаны.
-        // Пропускаем аргументы, которые являются значениями для предыдущих ключей (уже обработаны инкрементом ++i).
-        // Для более строгой проверки можно добавить else и вывести ошибку о неизвестном аргументе,
-        // но текущая логика пропускает их, если они не совпали с ключами.
     }
 
     // 4. Переинициализация логгера с настройками из аргументов командной строки
     Logger::init(client_log_level, client_log_file); // Повторный вызов init обновит настройки
-    Logger::info(client_log_prefix + "Логгер клиента переинициализирован. Уровень: " + std::to_string(static_cast<int>(client_log_level)) + 
+    Logger::info(client_log_prefix + "Логгер клиента переинициализирован. Уровень: " + std::to_string(static_cast<int>(client_log_level)) +
                  ", Файл: '" + (client_log_file.empty() ? "Только консоль (по умолчанию)" : client_log_file) + "'");
 
     // 5. Проверка обязательных аргументов и логика режимов
@@ -223,7 +219,6 @@ int main(int argc, char* argv[]) {
         arg_output_file_path.clear(); // Сбрасываем, чтобы не использовать случайно
     }
     if (interactive_mode && !arg_command_file_path.empty()){
-        // Этого не должно случиться, если логика установки interactive_mode верна
         Logger::warn(client_log_prefix + "Обнаружен путь к файлу команд ('" + arg_command_file_path +"'), но режим остался интерактивным. Проверьте логику парсинга аргументов.");
     }
 
@@ -244,12 +239,11 @@ int main(int argc, char* argv[]) {
     std::cout << "Клиент: Подключение к серверу " << server_host << ":" << server_port << "..." << std::endl;
 
     if (!client_socket.connectSocket(server_host, server_port)) {
-        // connectSocket уже логирует ошибку
         std::cout << "КЛИЕНТ: ОШИБКА: Не удалось подключиться к серверу " << server_host << ":" << server_port << ". Проверьте доступность сервера и правильность адреса/порта." << std::endl;
         Logger::info(client_log_prefix + "========== Клиент Базы Данных Завершил Работу (Ошибка Подключения) ==========");
         return 1;
     }
-    Logger::info(client_log_prefix + "Успешно подключен к серверу " + server_host + ":" + server_port);
+    Logger::info(client_log_prefix + "Успешно подключен к серверу " + server_host + ":" + std::to_string(server_port));
     std::cout << "Клиент: Успешно подключен к серверу." << std::endl;
 
     // 7. Основная логика работы клиента (интерактивный или пакетный режим)
@@ -260,28 +254,26 @@ int main(int argc, char* argv[]) {
         if (!cmd_file.is_open()) {
             Logger::error(client_log_prefix + "Не удалось открыть файл команд для чтения: \"" + arg_command_file_path + "\"");
             std::cout << "КЛИЕНТ: ОШИБКА: Не удалось открыть файл команд: " << arg_command_file_path << std::endl;
-            if(client_socket.isValid()) { // Если успели подключиться, пытаемся корректно завершить сессию
-                client_socket.sendAllDataWithLengthPrefix("EXIT_CLIENT_SESSION"); 
+            if(client_socket.isValid()) {
+                client_socket.sendAllDataWithLengthPrefix("EXIT_CLIENT_SESSION");
             }
             client_socket.closeSocket();
             Logger::info(client_log_prefix + "========== Клиент Базы Данных Завершил Работу (Ошибка Файла Команд) ==========");
             return 1;
         }
 
-        // Определение имени выходного файла
         std::filesystem::path effective_output_file_path_obj;
         if (!arg_output_file_path.empty()) {
             effective_output_file_path_obj = arg_output_file_path;
-        } else { // Формируем имя по умолчанию
+        } else {
             std::filesystem::path input_path_obj(arg_command_file_path);
-            std::string output_filename_base = input_path_obj.stem().string(); // Имя файла без расширения
-            std::string input_file_extension = input_path_obj.extension().string(); // Расширение с точкой
-            // Имя выходного файла: <имя_входного_файла_без_расширения>.out<исходное_расширение_или_.txt>
-            effective_output_file_path_obj = input_path_obj.parent_path() / 
+            std::string output_filename_base = input_path_obj.stem().string();
+            std::string input_file_extension = input_path_obj.extension().string();
+            effective_output_file_path_obj = input_path_obj.parent_path() /
                                              (output_filename_base + ".out" + (input_file_extension.empty() ? ".txt" : input_file_extension) );
         }
-        
-        std::ofstream out_file_stream(effective_output_file_path_obj.string()); // string() для совместимости с ofstream
+
+        std::ofstream out_file_stream(effective_output_file_path_obj.string());
         if (!out_file_stream.is_open()) {
             Logger::error(client_log_prefix + "Не удалось открыть выходной файл для записи: \"" + effective_output_file_path_obj.string() + "\"");
             std::cout << "КЛИЕНТ: ОШИБКА: Не удалось открыть выходной файл: " << effective_output_file_path_obj.string() << std::endl;
@@ -299,60 +291,55 @@ int main(int argc, char* argv[]) {
         out_file_stream.flush();
 
         std::string line;
-        int query_num = 0; // Счетчик успешно обработанных команд из файла
-        int line_num_in_file = 0; // Счетчик строк в файле
-        bool client_initiated_exit_cmd = false; // Флаг, что команда EXIT была в файле
-        bool connection_error_occurred = false; // Флаг ошибки связи
+        int query_num = 0;
+        int line_num_in_file = 0;
+        bool client_initiated_exit_cmd = false;
+        bool connection_error_occurred = false;
 
         while (std::getline(cmd_file, line)) {
             line_num_in_file++;
-            // Удаляем CR (Carriage Return), если есть (для файлов из Windows на Linux/macOS)
             if (!line.empty() && line.back() == '\r') {
                 line.pop_back();
             }
-            
-            // Пропускаем пустые строки и комментарии (строки, начинающиеся с #)
-            std::string trimmed_line = line; 
-            trimmed_line.erase(0, trimmed_line.find_first_not_of(" \t\n\r\f\v")); // Удаляем пробелы в начале
-            trimmed_line.erase(trimmed_line.find_last_not_of(" \t\n\r\f\v") + 1); // Удаляем пробелы в конце
+
+            std::string trimmed_line = line;
+            trimmed_line.erase(0, trimmed_line.find_first_not_of(" \t\n\r\f\v"));
+            trimmed_line.erase(trimmed_line.find_last_not_of(" \t\n\r\f\v") + 1);
             if (trimmed_line.empty() || (!trimmed_line.empty() && trimmed_line[0] == '#')) {
                 Logger::debug(client_log_prefix + "Пропущена строка #" + std::to_string(line_num_in_file) +" из файла команд (пустая или комментарий): \"" + line + "\"");
                 continue;
             }
-            query_num++; // Увеличиваем счетчик команд
+            query_num++;
 
             out_file_stream << "\n[Клиент] Запрос #" << query_num << " (строка файла #" << line_num_in_file << "): " << line << "\n";
-            out_file_stream << "----------------------------------------\n"; // Разделитель перед ответом
-            out_file_stream.flush(); 
+            out_file_stream << "----------------------------------------\n";
+            out_file_stream.flush();
 
             if (!process_single_request_to_server(client_socket, line, out_file_stream, client_log_prefix, client_receive_timeout)) {
                 Logger::error(client_log_prefix + "Фатальная ошибка при обработке запроса (строка #" + std::to_string(line_num_in_file) + ") из файла: \"" + line + "\". Прерывание обработки файла.");
                 out_file_stream << "\nОШИБКА КЛИЕНТА: Связь с сервером потеряна или не удалось обработать запрос. Обработка файла прервана.\n";
                 connection_error_occurred = true;
-                break; // Прерываем обработку файла при ошибке
+                break;
             }
-             if (clientToUpper(line) == "EXIT") { // Если это была команда EXIT
+             if (clientToUpper(line) == "EXIT") {
                 Logger::info(client_log_prefix + "Команда EXIT найдена в файле команд (строка #" + std::to_string(line_num_in_file) + "). Завершение обработки файла и сессии.");
-                client_initiated_exit_cmd = true; // Устанавливаем флаг
-                // Ответ от сервера на EXIT уже должен быть записан в out_file_stream
-                break; // Завершаем обработку файла
+                client_initiated_exit_cmd = true;
+                break;
             }
-        } // конец while (чтение файла команд)
+        }
         cmd_file.close();
-        
+
         out_file_stream << "\n--- Клиент: Конец обработки файла команд: " << arg_command_file_path << " ---";
         if (connection_error_occurred) {
              out_file_stream << " (обработка прервана из-за ошибки)";
         }
         out_file_stream << std::endl;
         out_file_stream.close();
-        
+
         std::cout << "Клиент: Обработка файла команд \"" << arg_command_file_path << "\" завершена. "
                   << "Всего обработано команд: " << query_num << "."
                   << " Результаты сохранены в: \"" << effective_output_file_path_obj.string() << "\"" << std::endl;
-        
-        // Если цикл завершился не по команде EXIT из файла и не из-за ошибки связи,
-        // и сокет еще валиден, отправляем EXIT_CLIENT_SESSION, чтобы сервер знал, что клиент завершил работу.
+
         if (!client_initiated_exit_cmd && !connection_error_occurred && client_socket.isValid()) {
              Logger::info(client_log_prefix + "Отправка EXIT_CLIENT_SESSION на сервер после завершения обработки файла команд.");
              if (!client_socket.sendAllDataWithLengthPrefix("EXIT_CLIENT_SESSION")) {
@@ -365,45 +352,45 @@ int main(int argc, char* argv[]) {
         Logger::info(client_log_prefix + "Вход в интерактивный режим работы с сервером.");
         std::cout << "\nКлиент в интерактивном режиме. Подключен к " << server_host << ":" << server_port << ".\n";
         std::cout << "Введите 'HELP' для списка команд, 'EXIT' для завершения сессии с сервером, 'QUIT_CLIENT' для выхода из программы.\n";
-        
+
         std::string user_input;
-        bool session_active = true; // Флаг активности текущей сессии
-        while (session_active && client_socket.isValid()) { 
-            std::cout << "[" << server_host << ":" << server_port << "] > "; // Приглашение к вводу
-            if (!std::getline(std::cin, user_input)) { // Чтение строки от пользователя
-                if (std::cin.eof()) { // Обнаружен EOF (Ctrl+D в Linux, Ctrl+Z Enter в Windows)
+        bool session_active = true;
+        while (session_active && client_socket.isValid()) {
+            std::cout << "[" << server_host << ":" << server_port << "] > ";
+            if (!std::getline(std::cin, user_input)) {
+                if (std::cin.eof()) {
                      Logger::info(client_log_prefix + "Обнаружен EOF в интерактивном режиме. Отправка EXIT_CLIENT_SESSION на сервер.");
                      std::cout << "\nКлиент: Обнаружен EOF (конец ввода). Завершение сессии с сервером..." << std::endl;
-                     if (client_socket.isValid()) { // Если сокет еще валиден
+                     if (client_socket.isValid()) {
                          if(!client_socket.sendAllDataWithLengthPrefix("EXIT_CLIENT_SESSION")){
                              Logger::warn(client_log_prefix + "Не удалось отправить EXIT_CLIENT_SESSION серверу при обработке EOF.");
                          }
                      }
-                } else { // Другая ошибка std::cin (маловероятно, но возможно)
+                } else {
                     Logger::error(client_log_prefix + "Ошибка ввода std::cin в интерактивном режиме. Завершение.");
                      std::cout << "КЛИЕНТ: Критическая ошибка ввода. Завершение работы." << std::endl;
                 }
-                session_active = false; // Выход из цикла в любом случае при ошибке getline
+                session_active = false;
                 break;
             }
 
-            if (user_input.empty()) continue; // Пропускаем пустой ввод
+            if (user_input.empty()) continue;
 
-            std::string upper_input = clientToUpper(user_input); // Для сравнения локальных команд
+            std::string upper_input = clientToUpper(user_input);
 
-            if (upper_input == "QUIT_CLIENT") { // Локальная команда выхода из клиента
+            if (upper_input == "QUIT_CLIENT") {
                 Logger::info(client_log_prefix + "Получена локальная команда QUIT_CLIENT. Завершение работы клиента и сессии с сервером.");
                 std::cout << "Клиент: Завершение работы по команде QUIT_CLIENT..." << std::endl;
-                if (client_socket.isValid()) { // Уведомляем сервер о завершении сессии
+                if (client_socket.isValid()) {
                     if(!client_socket.sendAllDataWithLengthPrefix("EXIT_CLIENT_SESSION")){
                         Logger::warn(client_log_prefix + "Не удалось отправить EXIT_CLIENT_SESSION серверу при выполнении QUIT_CLIENT.");
                     }
                 }
-                session_active = false; // Завершаем цикл
+                session_active = false;
                 break;
             }
-            
-            if (upper_input == "HELP") { // Локальная команда HELP
+
+            if (upper_input == "HELP") {
                 std::cout << "\nКлиент: Локальная команда HELP:\n";
                 std::cout << "  Доступные команды для отправки на сервер (синтаксис как в ТЗ Этапа 3):\n";
                 std::cout << "  ADD FIO \"<полное имя>\" IP \"<ip>\" DATE \"<дд.мм.гггг>\"\n";
@@ -428,30 +415,25 @@ int main(int argc, char* argv[]) {
                 std::cout << "  * Даты вводятся в формате ДД.ММ.ГГГГ. IP-адреса в формате xxx.xxx.xxx.xxx.\n";
                 std::cout << "  * Трафик (TRAFFIC_IN, TRAFFIC_OUT) - это 24 числа (double), разделенных пробелами.\n";
                 std::cout << "----------------------------------------" << std::endl;
-                continue; // Продолжаем ожидать следующую команду
+                continue;
             }
 
-            // Отправляем запрос на сервер и обрабатываем ответ
             if (!process_single_request_to_server(client_socket, user_input, std::cout, client_log_prefix, client_receive_timeout)) {
                  Logger::error(client_log_prefix + "Сессия с сервером прервана из-за ошибки передачи/получения данных.");
                  std::cout << "КЛИЕНТ: ОШИБКА: Соединение с сервером потеряно или произошла ошибка при обмене данными. Пожалуйста, перезапустите клиент." << std::endl;
-                 session_active = false; // Завершаем сессию при ошибке
+                 session_active = false;
                  break;
             }
 
-            // Если пользователь ввел команду EXIT, сервер должен был подтвердить ее.
-            // После получения ответа на EXIT, клиент завершает сессию.
             if (upper_input == "EXIT") {
                 Logger::info(client_log_prefix + "Команда EXIT отправлена серверу, ответ получен. Завершение сессии со стороны клиента.");
                 std::cout << "Клиент: Сессия с сервером завершена по команде EXIT." << std::endl;
-                session_active = false; // Завершаем цикл
-                // client_socket.closeSocket() будет вызван ниже, после цикла
-                break; 
+                session_active = false;
+                break;
             }
-        } // конец while (интерактивный режим)
+        }
     }
 
-    // 8. Корректное закрытие сокета клиента перед выходом
     if (client_socket.isValid()) {
         Logger::info(client_log_prefix + "Закрытие соединения с сервером со стороны клиента...");
         client_socket.closeSocket();
@@ -461,5 +443,5 @@ int main(int argc, char* argv[]) {
     }
 
     Logger::info(client_log_prefix + "========== Клиент Базы Данных Завершил Работу ==========");
-    return 0; // Успешное завершение работы клиента
+    return 0;
 }
