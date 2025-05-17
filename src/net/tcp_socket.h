@@ -228,10 +228,18 @@ public:
      */
     bool setSendTimeout(int timeout_ms);
 
+    /*!
+     * \brief Возвращает код последней системной ошибки, связанной с операциями сокета.
+     * Для Windows это результат WSAGetLastError(), для POSIX - значение errno.
+     * \return Код последней ошибки или 0, если ошибка не была зафиксирована или была успешно сброшена.
+     */
+    int getLastSocketError() const noexcept;
+
 
 private:
 #ifdef _WIN32
     SOCKET socket_fd_ = INVALID_SOCKET; /*!< Дескриптор сокета для Windows (тип `SOCKET`). */
+    mutable int last_error_code_ = 0;   /*!< Хранит код последней ошибки WSAGetLastError(). `mutable` для установки в const методах. */
     static bool wsa_initialized_;       /*!< Статический флаг, `true` если WSA (Winsock API) был успешно инициализирован. */
     static int wsa_ref_count_;          /*!< Статический счетчик ссылок для управления `WSAStartup` / `WSACleanup`. */
     static std::mutex wsa_mutex_;       /*!< Статический мьютекс для синхронизации инициализации/очистки WSA. */
@@ -242,7 +250,19 @@ private:
     static void cleanup_wsa();
 #else // POSIX
     int socket_fd_ = -1;                /*!< Файловый дескриптор сокета для POSIX-систем (тип `int`). */
+    mutable int last_error_code_ = 0;   /*!< Хранит код последней ошибки errno. `mutable` для установки в const методах. */
 #endif
+    /*!
+     * \brief Внутренний метод для сохранения кода последней системной ошибки сокета.
+     * Вызывается после неудачной операции с сокетом. Помечен `const`, так как изменяет `mutable last_error_code_`.
+     */
+    void setLastSocketError() const noexcept;
+
+    /*!
+     * \brief Внутренний метод для сброса сохраненного кода последней ошибки сокета.
+     * Вызывается перед новой операцией с сокетом. Помечен `const`, так как изменяет `mutable last_error_code_`.
+     */
+    void clearLastSocketError() const noexcept;
 };
 
 #endif // TCP_SOCKET_H
