@@ -4,50 +4,30 @@
  * \brief Реализация класса ServerCommandHandler для обработки команд сервера.
  */
 #include "server_command_handler.h"
-#include "logger.h"         // Для логирования операций и ошибок
-#include "common_defs.h"    // Для HOURS_IN_DAY, DOUBLE_EPSILON, DEFAULT_SERVER_DATA_SUBDIR
-#include "file_utils.h"     // Для getProjectRootPath (используется в getSafeServerFilePath_SCH как fallback)
-#include "provider_record.h"// Для работы с записями
-#include "ip_address.h"     // Для работы с IP-адресами
-#include "date.h"           // Для работы с датами
-#include <filesystem>       // Для работы с путями (std::filesystem)
-#include <iomanip>          // Для std::fixed, std::setprecision
-#include <algorithm>        // Для std::sort, std::unique, std::transform
-#include <cstdio>           // Для ::remove, если потребуется удаление файла (пока не используется)
-#include <cctype>           // Для std::toupper
+#include "logger.h"
+#include "common_defs.h"
+#include "file_utils.h"
+#include "provider_record.h"
+#include "ip_address.h"
+#include "date.h"
+#include <filesystem>
+#include <iomanip>
+#include <algorithm>
+#include <cstdio>
+#include <cctype>
 
 #ifdef _WIN32
-#include <direct.h> // Для _getcwd
+#include <direct.h>
 #else
-#include <unistd.h> // Для getcwd
+#include <unistd.h>
 #endif
 
-// Локальная вспомогательная функция для преобразования строки в верхний регистр
-static std::string toUpperSCH(std::string s) { // SCH - Server Command Handler
+static std::string toUpperSCH(std::string s) {
     std::transform(s.begin(), s.end(), s.begin(),
                    [](unsigned char c){ return static_cast<char>(std::toupper(c)); });
     return s;
 }
 
-
-/*!
- * \brief Формирует безопасный абсолютный путь к файлу данных на сервере.
- *
- * Принимает базовый путь (например, корень проекта или указанную директорию данных сервера)
- * и имя файла, запрошенное клиентом. Гарантирует, что итоговый путь будет находиться
- * внутри предопределенной поддиректории (`default_data_subdir`, например, "server_databases")
- * относительно базового пути, предотвращая выход за пределы "песочницы".
- * Создает директорию `default_data_subdir`, если она не существует.
- *
- * \param root_for_data_ops_str Базовый путь для файловых операций. Если пуст, функция
- * попытается определить корень проекта относительно текущей рабочей директории.
- * \param requested_filename_from_client Имя файла, запрошенное клиентом (может содержать путь, но будет взято только имя файла).
- * \param default_data_subdir Имя поддиректории, в которой должны храниться файлы БД.
- * \return Абсолютный, канонизированный и безопасный путь `std::filesystem::path` к файлу.
- * \throw std::runtime_error если имя файла недопустимо, содержит запрещенные символы,
- * слишком длинное, или если происходит попытка доступа к файлу вне разрешенной директории,
- * или при ошибках файловой системы.
- */
 std::filesystem::path getSafeServerFilePath_SCH(
     const std::string& root_for_data_ops_str,
     const std::string& requested_filename_from_client,
@@ -64,9 +44,9 @@ std::filesystem::path getSafeServerFilePath_SCH(
             server_data_search_root = std::filesystem::current_path();
         }
     } else {
-        char current_path_cstr[1024] = {0}; 
+        char current_path_cstr[1024] = {0};
         #ifdef _WIN32
-            if (_getcwd(current_path_cstr, sizeof(current_path_cstr) -1) == nullptr) { 
+            if (_getcwd(current_path_cstr, sizeof(current_path_cstr) -1) == nullptr) {
                 throw std::runtime_error("getSafeServerFilePath_SCH: Критическая ошибка: не удалось получить текущую рабочую директорию (_getcwd).");
             }
         #else
@@ -101,17 +81,21 @@ std::filesystem::path getSafeServerFilePath_SCH(
         throw std::runtime_error("Критическая ошибка сервера: путь для хранения баз данных не является директорией.");
     }
 
-
     std::filesystem::path client_filename_obj(requested_filename_from_client);
     std::string clean_filename = client_filename_obj.filename().string();
 
     if (clean_filename.empty() || clean_filename == "." || clean_filename == "..") {
         throw std::runtime_error("Недопустимое имя файла от клиента: '" + requested_filename_from_client + "' (пустое или состоит из точек).");
     }
+    // Опциональная проверка на скрытые файлы (раскомментировать при необходимости)
+    // if (!clean_filename.empty() && clean_filename[0] == '.' && clean_filename != "." && clean_filename != "..") {
+    //     Logger::warn("getSafeServerFilePath_SCH: Клиент запросил файл, начинающийся с точки (потенциально скрытый): '" + clean_filename + "'. В зависимости от политики безопасности, это может быть нежелательно.");
+    //     // throw std::runtime_error("Доступ к скрытым файлам (начинающимся с '.') запрещен.");
+    // }
     if (clean_filename.find_first_of("/\\:*?\"<>|") != std::string::npos) {
         throw std::runtime_error("Имя файла '" + clean_filename + "' содержит недопустимые символы (/\\:*?\"<>|).");
     }
-    const size_t MAX_FILENAME_LEN = 250; 
+    const size_t MAX_FILENAME_LEN = 250;
     if (clean_filename.length() > MAX_FILENAME_LEN) {
         throw std::runtime_error("Имя файла слишком длинное (макс. " + std::to_string(MAX_FILENAME_LEN) + " символов): '" + clean_filename + "'");
     }
@@ -122,7 +106,7 @@ std::filesystem::path getSafeServerFilePath_SCH(
 
     try {
         canonical_target_path = std::filesystem::weakly_canonical(target_path);
-        canonical_data_root = std::filesystem::weakly_canonical(data_storage_dir); 
+        canonical_data_root = std::filesystem::weakly_canonical(data_storage_dir);
     } catch (const std::filesystem::filesystem_error& e_canon) {
         Logger::error("getSafeServerFilePath_SCH: Ошибка канонизации пути '" + target_path.string() + "' или '" + data_storage_dir.string() + "': " + e_canon.what());
         throw std::runtime_error("Ошибка сервера при обработке пути к файлу.");
@@ -131,8 +115,8 @@ std::filesystem::path getSafeServerFilePath_SCH(
     std::string target_str_norm = canonical_target_path.lexically_normal().string();
     std::string root_str_norm = canonical_data_root.lexically_normal().string();
 
-    if (target_str_norm.rfind(root_str_norm, 0) != 0 || 
-        target_str_norm.length() <= root_str_norm.length() || 
+    if (target_str_norm.rfind(root_str_norm, 0) != 0 ||
+        target_str_norm.length() <= root_str_norm.length() ||
         (target_str_norm.length() > root_str_norm.length() &&
          target_str_norm[root_str_norm.length()] != std::filesystem::path::preferred_separator)
        )
@@ -148,25 +132,14 @@ std::filesystem::path getSafeServerFilePath_SCH(
     return canonical_target_path;
 }
 
-/*!
- * \brief Конструктор ServerCommandHandler.
- * \param db Ссылка на базу данных.
- * \param plan Ссылка на тарифный план.
- * \param server_data_path_base Базовый путь для файловых операций на сервере.
- */
 ServerCommandHandler::ServerCommandHandler(Database& db, TariffPlan& plan, const std::string& server_data_path_base)
     : db_(db), tariff_plan_(plan), server_data_base_path_(server_data_path_base) {
     Logger::info("ServerCommandHandler: Инициализирован. Базовый путь для данных сервера: '" +
                   (server_data_base_path_.empty() ? "[Не указан, будет использовано автоопределение/CWD]" : server_data_base_path_) + "'");
 }
 
-/*!
- * \brief Обрабатывает входящий запрос.
- * \param query Разобранный запрос.
- * \return Строка ответа для клиента.
- */
 std::string ServerCommandHandler::processCommand(const Query& query) {
-    std::ostringstream response_oss; 
+    std::ostringstream response_oss;
 
     try {
         switch (query.type) {
@@ -178,12 +151,12 @@ std::string ServerCommandHandler::processCommand(const Query& query) {
             case QueryType::PRINT_ALL:         handlePrintAll(response_oss); break;
             case QueryType::LOAD:              handleLoad(query.params, response_oss); break;
             case QueryType::SAVE:              handleSave(query.params, response_oss); break;
-            case QueryType::HELP: 
+            case QueryType::HELP:
                 response_oss << "Сервер поддерживает команды: ADD, SELECT, DELETE, EDIT, CALCULATE_CHARGES, PRINT_ALL, LOAD, SAVE, EXIT.\n"
                              << "Для детального синтаксиса используйте команду HELP на стороне клиента.\n";
                 Logger::info("ServerCommandHandler: Обработан запрос HELP от клиента (ответ-заглушка).");
                 break;
-            case QueryType::EXIT: 
+            case QueryType::EXIT:
                 response_oss << "Сервер подтверждает команду EXIT. Сессия будет завершена клиентом после получения этого ответа.\n";
                 Logger::info("ServerCommandHandler: Подтверждение команды EXIT для клиента. Клиент должен разорвать соединение.");
                 break;
@@ -196,7 +169,7 @@ std::string ServerCommandHandler::processCommand(const Query& query) {
                 break;
         }
     } catch (const std::invalid_argument& iae) {
-        response_oss.str(""); response_oss.clear(); 
+        response_oss.str(""); response_oss.clear();
         response_oss << "Ошибка [Сервер]: Неверный аргумент в параметрах команды -> " << iae.what() << "\n"
                      << "Оригинальный запрос: \"" << query.originalQueryString << "\"\n";
         Logger::error("ServerCommandHandler: InvalidArgument при обработке '" + query.originalQueryString + "': " + iae.what());
@@ -205,17 +178,17 @@ std::string ServerCommandHandler::processCommand(const Query& query) {
         response_oss << "Ошибка [Сервер]: Запрошенный элемент (например, по индексу) вне допустимого диапазона -> " << oor.what() << "\n"
                      << "Оригинальный запрос: \"" << query.originalQueryString << "\"\n";
         Logger::error("ServerCommandHandler: OutOfRange при обработке '" + query.originalQueryString + "': " + oor.what());
-    } catch (const std::runtime_error& rte) { 
+    } catch (const std::runtime_error& rte) {
         response_oss.str(""); response_oss.clear();
         response_oss << "Ошибка выполнения на сервере -> " << rte.what() << "\n"
                      << "Оригинальный запрос: \"" << query.originalQueryString << "\"\n";
         Logger::error("ServerCommandHandler: RuntimeError при обработке '" + query.originalQueryString + "': " + rte.what());
-    } catch (const std::exception& e) { 
+    } catch (const std::exception& e) {
         response_oss.str(""); response_oss.clear();
         response_oss << "Непредвиденная системная ошибка на сервере -> " << e.what() << "\n"
                      << "Оригинальный запрос: \"" << query.originalQueryString << "\"\n";
         Logger::error("ServerCommandHandler: StdException при обработке '" + query.originalQueryString + "': " + e.what());
-    } catch (...) { 
+    } catch (...) {
         response_oss.str(""); response_oss.clear();
         response_oss << "Неизвестная критическая ошибка произошла на сервере при обработке вашего запроса.\n"
                      << "Оригинальный запрос: \"" << query.originalQueryString << "\"\n";
@@ -224,27 +197,23 @@ std::string ServerCommandHandler::processCommand(const Query& query) {
     return response_oss.str();
 }
 
-
-// --- Реализации методов handle* ---
-
-/*! \brief Обработка команды ADD. */
 void ServerCommandHandler::handleAdd(const QueryParameters& params, std::ostringstream& oss) {
     std::vector<double> trafficInToAdd = params.trafficInData;
     std::vector<double> trafficOutToAdd = params.trafficOutData;
 
-    if (!params.hasTrafficInToSet) { 
+    if (!params.hasTrafficInToSet) {
         trafficInToAdd.assign(HOURS_IN_DAY, 0.0);
         Logger::debug("ADD: Блок TRAFFIC_IN не предоставлен, используется трафик по нулям.");
     }
-    if (!params.hasTrafficOutToSet) { 
+    if (!params.hasTrafficOutToSet) {
         trafficOutToAdd.assign(HOURS_IN_DAY, 0.0);
         Logger::debug("ADD: Блок TRAFFIC_OUT не предоставлен, используется трафик по нулям.");
     }
-    
+
     ProviderRecord newRecord(
-        params.subscriberNameData, 
-        params.ipAddressData,      
-        params.dateData,           
+        params.subscriberNameData,
+        params.ipAddressData,
+        params.dateData,
         trafficInToAdd,
         trafficOutToAdd
     );
@@ -254,7 +223,6 @@ void ServerCommandHandler::handleAdd(const QueryParameters& params, std::ostring
                  ", Дата=" + params.dateData.toString() + " успешно добавлена.");
 }
 
-/*! \brief Обработка команды SELECT. */
 void ServerCommandHandler::handleSelect(const QueryParameters& params, std::ostringstream& oss) {
     std::string criteria_log = "FIO: " + (params.useNameFilter ? "'" + params.criteriaName + "'" : "any") +
                               ", IP: " + (params.useIpFilter ? params.criteriaIpAddress.toString() : "any") +
@@ -275,7 +243,7 @@ void ServerCommandHandler::handleSelect(const QueryParameters& params, std::ostr
         for (size_t i = 0; i < indices.size(); ++i) {
             try {
                 const ProviderRecord& rec = db_.getRecordByIndex(indices[i]);
-                oss << "Запись (Индекс в БД #" << indices[i] << "):\n"; 
+                oss << "Запись (Индекс в БД #" << indices[i] << "):\n";
                 oss << rec;
                 oss << "\n-----------------------------------------------------------------\n";
             } catch (const std::out_of_range& e) {
@@ -288,7 +256,6 @@ void ServerCommandHandler::handleSelect(const QueryParameters& params, std::ostr
     Logger::info("SELECT: Завершено. Найдено записей: " + std::to_string(indices.size()) + ".");
 }
 
-/*! \brief Обработка команды DELETE. */
 void ServerCommandHandler::handleDelete(const QueryParameters& params, std::ostringstream& oss) {
      std::string criteria_log = "FIO: " + (params.useNameFilter ? "'" + params.criteriaName + "'" : "any") +
                               ", IP: " + (params.useIpFilter ? params.criteriaIpAddress.toString() : "any") +
@@ -307,12 +274,11 @@ void ServerCommandHandler::handleDelete(const QueryParameters& params, std::ostr
         return;
     }
 
-    size_t num_deleted = db_.deleteRecordsByIndices(indices_to_delete); 
+    size_t num_deleted = db_.deleteRecordsByIndices(indices_to_delete);
     oss << "Успешно удалено " << num_deleted << " записей сервером.\n";
     Logger::info("DELETE: Удалено " + std::to_string(num_deleted) + " записей.");
 }
 
-/*! \brief Обработка команды EDIT. */
 void ServerCommandHandler::handleEdit(const QueryParameters& params, std::ostringstream& oss) {
     std::string criteria_log = "FIO: " + (params.useNameFilter ? "'" + params.criteriaName + "'" : "any") +
                               ", IP: " + (params.useIpFilter ? params.criteriaIpAddress.toString() : "any") +
@@ -340,15 +306,15 @@ void ServerCommandHandler::handleEdit(const QueryParameters& params, std::ostrin
                      " записей для редактирования, будет обработана только первая с индексом " + std::to_string(target_db_index));
     }
 
-    ProviderRecord record_to_edit = db_.getRecordByIndex(target_db_index); 
+    ProviderRecord record_to_edit = db_.getRecordByIndex(target_db_index);
     bool changed_applied = false;
-    std::ostringstream changes_log_details_ss; 
+    std::ostringstream changes_log_details_ss;
     changes_log_details_ss << "EDIT: Применяемые изменения для записи с индексом " << target_db_index << ": ";
 
     for (const auto& pair : params.setData) {
-        const std::string& field_key_upper = toUpperSCH(pair.first); 
+        const std::string& field_key_upper = toUpperSCH(pair.first);
         const std::string& value_str = pair.second;
-        changed_applied = true; 
+        changed_applied = true;
 
         if (field_key_upper == "FIO") {
             record_to_edit.setName(value_str);
@@ -371,7 +337,7 @@ void ServerCommandHandler::handleEdit(const QueryParameters& params, std::ostrin
             changes_log_details_ss << "DATE->" + new_date.toString() + "; ";
         } else {
              Logger::warn("EDIT: Обнаружено неизвестное поле '" + pair.first + "' в params.setData, которое должно было быть отфильтровано QueryParser'ом.");
-             changed_applied = false; 
+             changed_applied = false;
         }
     }
 
@@ -399,8 +365,6 @@ void ServerCommandHandler::handleEdit(const QueryParameters& params, std::ostrin
     }
 }
 
-
-/*! \brief Обработка команды CALCULATE_CHARGES. */
 void ServerCommandHandler::handleCalculateCharges(const QueryParameters& params, std::ostringstream& oss) {
      if (!params.useStartDateFilter || !params.useEndDateFilter) {
         throw std::runtime_error("Команда CALCULATE_CHARGES требует обязательного указания START_DATE и END_DATE.");
@@ -408,7 +372,7 @@ void ServerCommandHandler::handleCalculateCharges(const QueryParameters& params,
     if (params.criteriaStartDate > params.criteriaEndDate) {
          throw std::runtime_error("START_DATE (" + params.criteriaStartDate.toString() + ") не может быть позже END_DATE (" + params.criteriaEndDate.toString() + ") в CALCULATE_CHARGES.");
     }
-    
+
     std::string criteria_log_calc = "Период: " + params.criteriaStartDate.toString() + " - " + params.criteriaEndDate.toString();
     if(params.useNameFilter) criteria_log_calc += ", FIO: '" + params.criteriaName + "'";
     if(params.useIpFilter) criteria_log_calc += ", IP: " + params.criteriaIpAddress.toString();
@@ -439,12 +403,11 @@ void ServerCommandHandler::handleCalculateCharges(const QueryParameters& params,
         Logger::info("CALCULATE_CHARGES: Записи по критериям не найдены (после попытки получить их).");
         return;
     }
-    if (records_to_process.empty()){ 
+    if (records_to_process.empty()){
         oss << "В базе данных нет записей для расчета.\n";
         Logger::info("CALCULATE_CHARGES: База данных пуста.");
         return;
     }
-
 
     double grandTotalCharges = 0.0;
     oss << "Отчет по расчету стоимости за период (" << params.criteriaStartDate.toString() << " - " << params.criteriaEndDate.toString() << ") на сервере:\n";
@@ -462,7 +425,7 @@ void ServerCommandHandler::handleCalculateCharges(const QueryParameters& params,
                 charges_calculated_for_at_least_one = true;
                 grandTotalCharges += charge;
             }
-            catch (const std::exception& e) { 
+            catch (const std::exception& e) {
                 oss << "Абонент: " << record.getName() << " | Ошибка расчета: " << e.what() << "\n";
                 Logger::error("CALCULATE_CHARGES: Неожиданная ошибка расчета для " + record.getName() + ": " + e.what());
             }
@@ -477,7 +440,6 @@ void ServerCommandHandler::handleCalculateCharges(const QueryParameters& params,
     Logger::info("CALCULATE_CHARGES: Расчет завершен. Итого начислено: " + std::to_string(grandTotalCharges));
 }
 
-/*! \brief Обработка команды PRINT_ALL. */
 void ServerCommandHandler::handlePrintAll(std::ostringstream& oss) {
     Logger::info("PRINT_ALL: Запрос на вывод всех записей.");
     const size_t count = db_.getRecordCount();
@@ -489,7 +451,7 @@ void ServerCommandHandler::handlePrintAll(std::ostringstream& oss) {
         oss << "Содержимое базы данных на сервере (" << count << " записей):\n";
         Logger::info("PRINT_ALL: Вывод " + std::to_string(count) + " записей.");
         oss << "-----------------------------------------------------------------\n";
-        for (size_t i = 0; i < count; ++i) { 
+        for (size_t i = 0; i < count; ++i) {
             try {
                 const ProviderRecord& rec = db_.getRecordByIndex(i);
                 oss << "Запись (Индекс в БД #" << i << "):\n";
@@ -504,9 +466,8 @@ void ServerCommandHandler::handlePrintAll(std::ostringstream& oss) {
     }
 }
 
-/*! \brief Обработка команды LOAD. */
 void ServerCommandHandler::handleLoad(const QueryParameters& params, std::ostringstream& oss) {
-    if (params.filename.empty()) { 
+    if (params.filename.empty()) {
         throw std::runtime_error("Команда LOAD требует имя файла.");
     }
 
@@ -515,7 +476,7 @@ void ServerCommandHandler::handleLoad(const QueryParameters& params, std::ostrin
     Logger::info("LOAD: Попытка загрузки данных с сервера из файла: '" + target_file_path.string() + "'");
     FileOperationResult load_res = db_.loadFromFile(target_file_path.string());
 
-    oss << load_res.user_message << "\n"; 
+    oss << load_res.user_message << "\n";
 
     if (!load_res.success) {
         Logger::warn("LOAD: Операция загрузки файла '" + target_file_path.string() + "' завершилась с ошибкой. "
@@ -527,26 +488,25 @@ void ServerCommandHandler::handleLoad(const QueryParameters& params, std::ostrin
     }
 }
 
-/*! \brief Обработка команды SAVE. */
 void ServerCommandHandler::handleSave(const QueryParameters& params, std::ostringstream& oss) {
     std::string filename_to_save_on_server_final;
     FileOperationResult save_res;
 
-    if (params.filename.empty()) { 
+    if (params.filename.empty()) {
         filename_to_save_on_server_final = db_.getCurrentFilename();
         if (filename_to_save_on_server_final.empty()) {
             throw std::runtime_error("Имя файла для SAVE не указано и не было установлено ранее (через LOAD или SAVE с именем). Некуда сохранять.");
         }
         Logger::info("SAVE: Используется текущее имя файла из БД для сохранения: '" + filename_to_save_on_server_final + "'");
         save_res = db_.saveToFile();
-    } else { 
+    } else {
         std::filesystem::path target_file_path = getSafeServerFilePath_SCH(server_data_base_path_, params.filename);
         filename_to_save_on_server_final = target_file_path.string();
         Logger::info("SAVE: Используется указанное клиентом имя файла, разрешенное на сервере в: '" + filename_to_save_on_server_final + "'");
         save_res = db_.saveToFile(filename_to_save_on_server_final);
     }
 
-    oss << save_res.user_message << "\n"; 
+    oss << save_res.user_message << "\n";
 
     if (!save_res.success) {
         Logger::warn("SAVE: Операция сохранения в файл '" + filename_to_save_on_server_final + "' завершилась с ошибкой. "

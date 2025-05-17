@@ -79,7 +79,7 @@ TCPSocket::TCPSocket(int socket_fd_param)
 #endif
 {
 #ifdef _WIN32
-    if (!initialize_wsa()) { 
+    if (!initialize_wsa()) {
          throw std::runtime_error("TCPSocket Constructor(fd): Failed to initialize Winsock API (WSA).");
     }
 #endif
@@ -90,9 +90,9 @@ TCPSocket::TCPSocket(int socket_fd_param)
  * \brief Деструктор.
  */
 TCPSocket::~TCPSocket() {
-    closeSocket(); 
+    closeSocket();
 #ifdef _WIN32
-    cleanup_wsa(); 
+    cleanup_wsa();
 #endif
 }
 
@@ -104,7 +104,7 @@ TCPSocket::~TCPSocket() {
  */
 TCPSocket::TCPSocket(TCPSocket&& other) noexcept
 #ifdef _WIN32
-    : socket_fd_(other.socket_fd_) 
+    : socket_fd_(other.socket_fd_)
 #else
     : socket_fd_(other.socket_fd_)
 #endif
@@ -115,9 +115,9 @@ TCPSocket::TCPSocket(TCPSocket&& other) noexcept
             Logger::error("TCPSocket MoveCtor: initialize_wsa failed for a moved valid socket. WSA ref count might be incorrect.");
         }
     }
-    other.socket_fd_ = INVALID_SOCKET; 
+    other.socket_fd_ = INVALID_SOCKET;
 #else
-    other.socket_fd_ = -1; 
+    other.socket_fd_ = -1;
 #endif
 }
 
@@ -127,17 +127,17 @@ TCPSocket::TCPSocket(TCPSocket&& other) noexcept
  * \return Ссылка на текущий объект.
  */
 TCPSocket& TCPSocket::operator=(TCPSocket&& other) noexcept {
-    if (this != &other) { 
-        closeSocket(); 
+    if (this != &other) {
+        closeSocket();
 
 #ifdef _WIN32
         socket_fd_ = other.socket_fd_;
-        if (socket_fd_ != INVALID_SOCKET) { 
-            if(!initialize_wsa()){ 
+        if (socket_fd_ != INVALID_SOCKET) {
+            if(!initialize_wsa()){
                  Logger::error("TCPSocket MoveAssign: initialize_wsa failed for a moved valid socket. WSA ref count might be incorrect.");
             }
         }
-        other.socket_fd_ = INVALID_SOCKET; 
+        other.socket_fd_ = INVALID_SOCKET;
 #else
         socket_fd_ = other.socket_fd_;
         other.socket_fd_ = -1;
@@ -154,7 +154,7 @@ bool TCPSocket::isValid() const {
 #ifdef _WIN32
     return socket_fd_ != INVALID_SOCKET;
 #else
-    return socket_fd_ >= 0; 
+    return socket_fd_ >= 0;
 #endif
 }
 
@@ -168,14 +168,14 @@ void TCPSocket::closeSocket() {
         if (::closesocket(socket_fd_) == SOCKET_ERROR) {
             Logger::error("TCPSocket::closeSocket: closesocket call failed. Error: " + std::to_string(WSAGetLastError()));
         }
-        socket_fd_ = INVALID_SOCKET; 
+        socket_fd_ = INVALID_SOCKET;
 #else // POSIX
-        if (::shutdown(socket_fd_, SHUT_RDWR) < 0) { 
+        if (::shutdown(socket_fd_, SHUT_RDWR) < 0) {
         }
         if (::close(socket_fd_) < 0) {
             Logger::error("TCPSocket::closeSocket: close call failed. Error ("+ std::to_string(errno) +"): " + std::strerror(errno));
         }
-        socket_fd_ = -1; 
+        socket_fd_ = -1;
 #endif
     }
 }
@@ -183,7 +183,7 @@ void TCPSocket::closeSocket() {
 /*! \brief Возвращает сырой дескриптор сокета. */
 int TCPSocket::getRawSocketDescriptor() const {
 #ifdef _WIN32
-    return static_cast<int>(socket_fd_); 
+    return static_cast<int>(socket_fd_);
 #else
     return socket_fd_;
 #endif
@@ -196,19 +196,19 @@ int TCPSocket::getRawSocketDescriptor() const {
  * \return true при успехе.
  */
 bool TCPSocket::connectSocket(const std::string& host, int port) {
-    if (isValid()) { 
+    if (isValid()) {
         Logger::warn("TCPSocket::connectSocket: Socket fd " + std::to_string(getRawSocketDescriptor()) + " is already valid. Closing it first.");
         closeSocket();
     }
 
 #ifdef _WIN32
-    socket_fd_ = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP); 
+    socket_fd_ = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (socket_fd_ == INVALID_SOCKET) {
         Logger::error("TCPSocket::connectSocket: socket() creation failed. WSAError: " + std::to_string(WSAGetLastError()));
         return false;
     }
 #else
-    socket_fd_ = ::socket(AF_INET, SOCK_STREAM, 0); 
+    socket_fd_ = ::socket(AF_INET, SOCK_STREAM, 0);
     if (socket_fd_ < 0) {
         Logger::error("TCPSocket::connectSocket: socket() creation failed. Errno(" + std::to_string(errno) +"): " + std::strerror(errno));
         return false;
@@ -216,13 +216,13 @@ bool TCPSocket::connectSocket(const std::string& host, int port) {
 #endif
     Logger::debug("TCPSocket::connectSocket: System socket created, fd=" + std::to_string(getRawSocketDescriptor()));
 
-    addrinfo hints{}; 
+    addrinfo hints{};
     std::memset(&hints, 0, sizeof(hints));
-    hints.ai_family = AF_INET; 
+    hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_protocol = IPPROTO_TCP;
 
-    addrinfo *result_addrinfo = nullptr; 
+    addrinfo *result_addrinfo = nullptr;
     std::string port_str = std::to_string(port);
 
     int gai_res = getaddrinfo(host.c_str(), port_str.c_str(), &hints, &result_addrinfo);
@@ -232,7 +232,7 @@ bool TCPSocket::connectSocket(const std::string& host, int port) {
 #else
         Logger::error("TCPSocket::connectSocket: getaddrinfo failed for host '" + host + "'. Error: " + std::string(gai_strerror(gai_res)));
 #endif
-        closeSocket(); 
+        closeSocket();
         return false;
     }
 
@@ -241,20 +241,20 @@ bool TCPSocket::connectSocket(const std::string& host, int port) {
 #ifdef _WIN32
         if (::connect(socket_fd_, ptr->ai_addr, static_cast<int>(ptr->ai_addrlen)) != SOCKET_ERROR) {
             connected = true;
-            break; 
+            break;
         }
 #else
         if (::connect(socket_fd_, ptr->ai_addr, ptr->ai_addrlen) != -1) {
             connected = true;
-            break; 
+            break;
         }
 #endif
     }
-    freeaddrinfo(result_addrinfo); 
+    freeaddrinfo(result_addrinfo);
 
     if (!connected) {
         Logger::error("TCPSocket::connectSocket: All attempts to connect to " + host + ":" + port_str + " failed.");
-        closeSocket(); 
+        closeSocket();
         return false;
     }
     Logger::info("TCPSocket: Successfully connected to " + host + ":" + port_str + " on fd " + std::to_string(getRawSocketDescriptor()));
@@ -281,12 +281,12 @@ bool TCPSocket::bindSocket(int port) {
     Logger::debug("TCPSocket::bindSocket: System socket created for binding, fd=" + std::to_string(getRawSocketDescriptor()));
 
 #ifdef _WIN32
-    char optval_win = 1; 
+    char optval_win = 1;
     if (setsockopt(socket_fd_, SOL_SOCKET, SO_REUSEADDR, &optval_win, sizeof(optval_win)) == SOCKET_ERROR) {
          Logger::warn("TCPSocket::bindSocket: setsockopt(SO_REUSEADDR) failed. WSAError: " + std::to_string(WSAGetLastError()) + ". Continuing anyway.");
     }
 #else
-    int optval_posix = 1; 
+    int optval_posix = 1;
     if (setsockopt(socket_fd_, SOL_SOCKET, SO_REUSEADDR, &optval_posix, sizeof(optval_posix)) < 0) {
         Logger::warn("TCPSocket::bindSocket: setsockopt(SO_REUSEADDR) failed. Errno(" + std::to_string(errno) +"): " + std::strerror(errno) + ". Continuing anyway.");
     }
@@ -294,9 +294,9 @@ bool TCPSocket::bindSocket(int port) {
 
     sockaddr_in server_addr;
     std::memset(&server_addr, 0, sizeof(server_addr));
-    server_addr.sin_family = AF_INET;           
-    server_addr.sin_addr.s_addr = INADDR_ANY;   
-    server_addr.sin_port = htons(static_cast<unsigned short>(port)); 
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_addr.s_addr = INADDR_ANY;
+    server_addr.sin_port = htons(static_cast<unsigned short>(port));
 
     if (::bind(socket_fd_, reinterpret_cast<sockaddr*>(&server_addr), sizeof(server_addr)) < 0) {
 #ifdef _WIN32
@@ -304,7 +304,7 @@ bool TCPSocket::bindSocket(int port) {
 #else
         Logger::error("TCPSocket::bindSocket: bind() to port " + std::to_string(port) + " failed. Errno(" + std::to_string(errno) +"): " + std::strerror(errno));
 #endif
-        closeSocket(); 
+        closeSocket();
         return false;
     }
     Logger::info("TCPSocket: Socket fd " + std::to_string(getRawSocketDescriptor()) + " successfully bound to port " + std::to_string(port));
@@ -342,45 +342,45 @@ bool TCPSocket::listenSocket(int backlog) {
 TCPSocket TCPSocket::acceptSocket(std::string* client_ip, int* client_port) {
     if (!isValid()) {
         Logger::warn("TCPSocket::acceptSocket: Called on an invalid listening socket (fd: " + std::to_string(getRawSocketDescriptor()) + ").");
-        return TCPSocket(); 
+        return TCPSocket();
     }
 
-    sockaddr_storage client_addr_storage; 
+    sockaddr_storage client_addr_storage;
     socklen_t client_addr_len = sizeof(client_addr_storage);
 
 #ifdef _WIN32
     SOCKET accepted_socket_raw = ::accept(socket_fd_, reinterpret_cast<sockaddr*>(&client_addr_storage), &client_addr_len);
     if (accepted_socket_raw == INVALID_SOCKET) {
         int error_code = WSAGetLastError();
-        if (error_code == WSAEINTR ||          
-            error_code == WSAECONNABORTED ||   
-            error_code == WSAEWOULDBLOCK ||    
-            error_code == WSAESHUTDOWN ||      
-            error_code == WSAENOTSOCK) {       
+        if (error_code == WSAEINTR ||
+            error_code == WSAECONNABORTED ||
+            error_code == WSAEWOULDBLOCK ||
+            error_code == WSAESHUTDOWN ||
+            error_code == WSAENOTSOCK) {
             Logger::debug("TCPSocket::acceptSocket: accept() returned non-fatal error or interruption. WSAError: " + std::to_string(error_code));
-        } else { 
+        } else {
              Logger::warn("TCPSocket::acceptSocket: accept() failed. WSAError: " + std::to_string(error_code));
         }
-        return TCPSocket(); 
+        return TCPSocket();
     }
 #else // POSIX
     int accepted_socket_raw = ::accept(socket_fd_, reinterpret_cast<sockaddr*>(&client_addr_storage), &client_addr_len);
     if (accepted_socket_raw < 0) {
         int error_code = errno;
         if (error_code == EINTR || error_code == ECONNABORTED ||
-            error_code == EWOULDBLOCK || error_code == EAGAIN || 
-            error_code == ENOTSOCK ) { 
+            error_code == EWOULDBLOCK || error_code == EAGAIN ||
+            error_code == ENOTSOCK ) {
              Logger::debug("TCPSocket::acceptSocket: accept() returned non-fatal error or interruption. Errno(" + std::to_string(error_code) +"): " + std::strerror(error_code));
         } else {
             Logger::warn("TCPSocket::acceptSocket: accept() failed. Errno(" + std::to_string(error_code) +"): " + std::strerror(error_code));
         }
-        return TCPSocket(); 
+        return TCPSocket();
     }
 #endif
 
     if (client_ip || client_port) {
-        char host_str[NI_MAXHOST] = {0};  
-        char port_str[NI_MAXSERV] = {0}; 
+        char host_str[NI_MAXHOST] = {0};
+        char port_str[NI_MAXSERV] = {0};
 
         if (getnameinfo(reinterpret_cast<sockaddr*>(&client_addr_storage), client_addr_len,
                         host_str, NI_MAXHOST, port_str, NI_MAXSERV, NI_NUMERICHOST | NI_NUMERICSERV) == 0) {
@@ -390,12 +390,12 @@ TCPSocket TCPSocket::acceptSocket(std::string* client_ip, int* client_port) {
                     *client_port = std::stoi(port_str);
                 } catch (const std::exception& e_stoi) {
                     Logger::error("TCPSocket::acceptSocket: Ошибка конвертации порта клиента '" + std::string(port_str) + "' в число: " + e_stoi.what());
-                    *client_port = 0; 
+                    *client_port = 0;
                 }
             }
             Logger::info("TCPSocket: Accepted connection from " + std::string(host_str) + ":" + std::string(port_str) +
                          " on new fd " + std::to_string(static_cast<int>(accepted_socket_raw)));
-        } else { 
+        } else {
 #ifdef _WIN32
             Logger::warn("TCPSocket::acceptSocket: getnameinfo failed for accepted client. WSAError: " + std::to_string(WSAGetLastError()));
 #else
@@ -417,7 +417,7 @@ TCPSocket TCPSocket::acceptSocket(std::string* client_ip, int* client_port) {
 int TCPSocket::sendAllData(const char* buffer, size_t length) const {
     if (!isValid()) { Logger::error("TCPSocket (fd " + std::to_string(getRawSocketDescriptor()) + ")::sendAllData: Invalid socket."); return -1; }
     if (buffer == nullptr && length > 0) { Logger::error("TCPSocket (fd " + std::to_string(getRawSocketDescriptor()) + ")::sendAllData: Buffer is null with non-zero length ("+ std::to_string(length) +")."); return -1; }
-    if (length == 0) return 0; 
+    if (length == 0) return 0;
 
     size_t total_sent = 0;
     while (total_sent < length) {
@@ -426,37 +426,37 @@ int TCPSocket::sendAllData(const char* buffer, size_t length) const {
         bytes_sent_this_call = ::send(socket_fd_, buffer + total_sent, static_cast<int>(length - total_sent), 0);
         if (bytes_sent_this_call == SOCKET_ERROR) {
             int error_code = WSAGetLastError();
-            if (error_code == WSAEWOULDBLOCK) { 
+            if (error_code == WSAEWOULDBLOCK) {
                 Logger::debug("TCPSocket (fd " + std::to_string(socket_fd_) + ")::sendAllData: send WSAEWOULDBLOCK. Sent " + std::to_string(total_sent) + "/" + std::to_string(length) + " bytes so far.");
-                return static_cast<int>(total_sent); 
+                return static_cast<int>(total_sent);
             }
             Logger::error("TCPSocket (fd " + std::to_string(socket_fd_) + ")::sendAllData: send failed. WSAError: " + std::to_string(error_code));
-            return -1; 
+            return -1;
         }
 #else // POSIX
         bytes_sent_this_call = ::send(socket_fd_, buffer + total_sent, length - total_sent, MSG_NOSIGNAL);
         if (bytes_sent_this_call < 0) {
             int error_code = errno;
-            if (error_code == EINTR) { Logger::debug("TCPSocket (fd " + std::to_string(socket_fd_) + ")::sendAllData: send interrupted by EINTR, retrying."); continue; } 
-            if (error_code == EAGAIN 
+            if (error_code == EINTR) { Logger::debug("TCPSocket (fd " + std::to_string(socket_fd_) + ")::sendAllData: send interrupted by EINTR, retrying."); continue; }
+            if (error_code == EAGAIN
 #if defined(EAGAIN) && defined(EWOULDBLOCK) && EAGAIN != EWOULDBLOCK
                 || error_code == EWOULDBLOCK
 #endif
-            ) { 
+            ) {
                 Logger::debug("TCPSocket (fd " + std::to_string(socket_fd_) + ")::sendAllData: send would block (EAGAIN/EWOULDBLOCK). Sent " + std::to_string(total_sent) + "/" + std::to_string(length) + " bytes so far.");
-                return static_cast<int>(total_sent); 
+                return static_cast<int>(total_sent);
             }
             Logger::error("TCPSocket (fd " + std::to_string(socket_fd_) + ")::sendAllData: send failed. Errno(" + std::to_string(error_code) +"): " + std::strerror(error_code));
-            return -1; 
+            return -1;
         }
 #endif
         if (bytes_sent_this_call == 0) {
             Logger::warn("TCPSocket (fd " + std::to_string(getRawSocketDescriptor()) + ")::sendAllData: send returned 0. Peer might have closed connection or send buffer is full. Sent " + std::to_string(total_sent) + "/" + std::to_string(length) + " bytes.");
-            return static_cast<int>(total_sent); 
+            return static_cast<int>(total_sent);
         }
         total_sent += static_cast<size_t>(bytes_sent_this_call);
     }
-    return static_cast<int>(total_sent); 
+    return static_cast<int>(total_sent);
 }
 
 /*!
@@ -468,11 +468,11 @@ bool TCPSocket::sendAllDataWithLengthPrefix(const std::string& data) const {
     if (!isValid()) { Logger::error("TCPSocket (fd " + std::to_string(getRawSocketDescriptor()) + ")::sendAllDataWithLengthPrefix: Invalid socket."); return false; }
 
     uint32_t data_len_host = static_cast<uint32_t>(data.length());
-    if (data_len_host > MAX_MESSAGE_PAYLOAD_SIZE) { 
+    if (data_len_host > MAX_MESSAGE_PAYLOAD_SIZE) {
         Logger::error("TCPSocket (fd " + std::to_string(getRawSocketDescriptor()) + ")::sendAllDataWithLengthPrefix: Data size (" + std::to_string(data_len_host) + " bytes) exceeds MAX_MESSAGE_PAYLOAD_SIZE (" + std::to_string(MAX_MESSAGE_PAYLOAD_SIZE) + "). Message not sent.");
         return false;
     }
-    uint32_t data_len_net = htonl(data_len_host); 
+    uint32_t data_len_net = htonl(data_len_host);
 
     if (sendAllData(reinterpret_cast<const char*>(&data_len_net), sizeof(data_len_net)) != static_cast<int>(sizeof(data_len_net))) {
         Logger::error("TCPSocket (fd " + std::to_string(getRawSocketDescriptor()) + ")::sendAllDataWithLengthPrefix: Failed to send length prefix (" + std::to_string(sizeof(data_len_net)) + " bytes).");
@@ -497,7 +497,7 @@ bool TCPSocket::sendAllDataWithLengthPrefix(const std::string& data) const {
 int TCPSocket::receiveAllData(char* buffer, size_t length_to_receive) const {
     if (!isValid()) { Logger::error("TCPSocket (fd " + std::to_string(getRawSocketDescriptor()) + ")::receiveAllData: Invalid socket."); return -1; }
     if (buffer == nullptr && length_to_receive > 0) { Logger::error("TCPSocket (fd " + std::to_string(getRawSocketDescriptor()) + ")::receiveAllData: Buffer is null with non-zero length (" + std::to_string(length_to_receive) + ")."); return -1; }
-    if (length_to_receive == 0) return 0; 
+    if (length_to_receive == 0) return 0;
 
     size_t total_received = 0;
     while (total_received < length_to_receive) {
@@ -518,7 +518,7 @@ int TCPSocket::receiveAllData(char* buffer, size_t length_to_receive) const {
         if (bytes_received_this_call < 0) {
             int error_code = errno;
             if (error_code == EINTR) { Logger::debug("TCPSocket (fd " + std::to_string(socket_fd_) + ")::receiveAllData: recv interrupted by EINTR, retrying."); continue; }
-            if (error_code == EAGAIN 
+            if (error_code == EAGAIN
 #if defined(EAGAIN) && defined(EWOULDBLOCK) && EAGAIN != EWOULDBLOCK
                 || error_code == EWOULDBLOCK
 #endif
@@ -530,13 +530,13 @@ int TCPSocket::receiveAllData(char* buffer, size_t length_to_receive) const {
             return -1;
         }
 #endif
-        if (bytes_received_this_call == 0) { 
+        if (bytes_received_this_call == 0) {
             Logger::info("TCPSocket (fd " + std::to_string(getRawSocketDescriptor()) + ")::receiveAllData: Connection closed by peer. Received " + std::to_string(total_received) + "/" + std::to_string(length_to_receive) + " bytes before close.");
-            return static_cast<int>(total_received); 
+            return static_cast<int>(total_received);
         }
         total_received += static_cast<size_t>(bytes_received_this_call);
     }
-    return static_cast<int>(total_received); 
+    return static_cast<int>(total_received);
 }
 
 /*!
@@ -546,7 +546,7 @@ int TCPSocket::receiveAllData(char* buffer, size_t length_to_receive) const {
  * \return Строка с данными или пустая строка при ошибке/таймауте.
  */
 std::string TCPSocket::receiveAllDataWithLengthPrefix(bool& success, int timeout_ms) {
-    success = false; 
+    success = false;
     if (!isValid()) {
         Logger::error("TCPSocket (fd " + std::to_string(getRawSocketDescriptor()) + ")::receiveAllDataWithLengthPrefix: Invalid socket.");
         return "";
@@ -563,18 +563,19 @@ std::string TCPSocket::receiveAllDataWithLengthPrefix(bool& success, int timeout
     bool original_timeout_fetched_posix = false;
 #endif
 
-    if (timeout_ms >= 0) { 
+    if (timeout_ms >= 0) {
 #ifdef _WIN32
         if (getsockopt(socket_fd_, SOL_SOCKET, SO_RCVTIMEO, (char*)&original_timeout_val_win, &optlen_win) == 0) {
             original_timeout_fetched_win = true;
         } else {
             Logger::warn("TCPSocket (fd " + std::to_string(getRawSocketDescriptor()) + ")::receiveAllDataWithLengthPrefix: getsockopt SO_RCVTIMEO failed. WSAError: " + std::to_string(WSAGetLastError()));
         }
-        DWORD new_timeout_win = static_cast<DWORD>(timeout_ms);
+        DWORD new_timeout_win = static_cast<DWORD>(timeout_ms == 0 ? 1 : timeout_ms);
         if (setsockopt(socket_fd_, SOL_SOCKET, SO_RCVTIMEO, (const char*)&new_timeout_win, sizeof(new_timeout_win)) == 0) {
             temporary_timeout_was_set = true;
+            Logger::debug("TCPSocket (fd " + std::to_string(getRawSocketDescriptor()) + ")::receiveAllDataWithLengthPrefix: Set temporary SO_RCVTIMEO to " + std::to_string(new_timeout_win) + "ms.");
         } else {
-            Logger::error("TCPSocket (fd " + std::to_string(getRawSocketDescriptor()) + ")::receiveAllDataWithLengthPrefix: setsockopt SO_RCVTIMEO to " + std::to_string(timeout_ms) + "ms failed. WSAError: " + std::to_string(WSAGetLastError()));
+            Logger::error("TCPSocket (fd " + std::to_string(getRawSocketDescriptor()) + ")::receiveAllDataWithLengthPrefix: setsockopt SO_RCVTIMEO to " + std::to_string(new_timeout_win) + "ms failed. WSAError: " + std::to_string(WSAGetLastError()));
         }
 #else // POSIX
         if (getsockopt(socket_fd_, SOL_SOCKET, SO_RCVTIMEO, &original_timeout_val_posix, &optlen_posix) == 0) {
@@ -583,30 +584,36 @@ std::string TCPSocket::receiveAllDataWithLengthPrefix(bool& success, int timeout
             Logger::warn("TCPSocket (fd " + std::to_string(getRawSocketDescriptor()) + ")::receiveAllDataWithLengthPrefix: getsockopt SO_RCVTIMEO failed. Errno(" + std::to_string(errno) + "): " + std::strerror(errno));
         }
         timeval new_timeout_posix;
-        new_timeout_posix.tv_sec = timeout_ms / 1000;
-        new_timeout_posix.tv_usec = (timeout_ms % 1000) * 1000;
+        if (timeout_ms == 0) {
+            new_timeout_posix.tv_sec = 0;
+            new_timeout_posix.tv_usec = 1000;
+        } else {
+            new_timeout_posix.tv_sec = timeout_ms / 1000;
+            new_timeout_posix.tv_usec = (timeout_ms % 1000) * 1000;
+        }
         if (setsockopt(socket_fd_, SOL_SOCKET, SO_RCVTIMEO, &new_timeout_posix, sizeof(new_timeout_posix)) == 0) {
             temporary_timeout_was_set = true;
+            Logger::debug("TCPSocket (fd " + std::to_string(getRawSocketDescriptor()) + ")::receiveAllDataWithLengthPrefix: Set temporary SO_RCVTIMEO to " + std::to_string(timeout_ms) + "ms (sec=" + std::to_string(new_timeout_posix.tv_sec) + ", usec=" + std::to_string(new_timeout_posix.tv_usec) + ").");
         } else {
             Logger::error("TCPSocket (fd " + std::to_string(getRawSocketDescriptor()) + ")::receiveAllDataWithLengthPrefix: setsockopt SO_RCVTIMEO to " + std::to_string(timeout_ms) + "ms failed. Errno(" + std::to_string(errno) + "): " + std::strerror(errno));
         }
 #endif
     }
-    
+
     auto restore_timeout_finalizer = std::shared_ptr<void>(nullptr,
-        [&](void*){ 
-            if (temporary_timeout_was_set && isValid()) { 
+        [&](void*){
+            if (temporary_timeout_was_set && isValid()) {
             #ifdef _WIN32
-                if (original_timeout_fetched_win) { 
+                if (original_timeout_fetched_win) {
                     if (setsockopt(socket_fd_, SOL_SOCKET, SO_RCVTIMEO, (const char*)&original_timeout_val_win, sizeof(original_timeout_val_win)) != 0) {
                         Logger::warn("TCPSocket (fd " + std::to_string(getRawSocketDescriptor()) + ")::receiveAllDataWithLengthPrefix: Failed to restore SO_RCVTIMEO. WSAError: " + std::to_string(WSAGetLastError()));
-                    } 
+                    }
                 }
             #else // POSIX
                 if (original_timeout_fetched_posix) {
                     if (setsockopt(socket_fd_, SOL_SOCKET, SO_RCVTIMEO, &original_timeout_val_posix, sizeof(original_timeout_val_posix)) != 0) {
                         Logger::warn("TCPSocket (fd " + std::to_string(getRawSocketDescriptor()) + ")::receiveAllDataWithLengthPrefix: Failed to restore SO_RCVTIMEO. Errno(" + std::to_string(errno) + "): " + std::strerror(errno));
-                    } 
+                    }
                 }
             #endif
             }
@@ -624,14 +631,14 @@ std::string TCPSocket::receiveAllDataWithLengthPrefix(bool& success, int timeout
         } else if (bytes_len_received < 0 && isValid()) {
              Logger::error("TCPSocket (fd " + std::to_string(getRawSocketDescriptor()) + ")::receiveAllDataWithLengthPrefix: Socket error while receiving length prefix.");
         }
-        return ""; 
+        return "";
     }
 
     uint32_t data_len_net;
     std::memcpy(&data_len_net, len_buffer, sizeof(uint32_t));
     uint32_t data_len_host = ntohl(data_len_net);
 
-    if (data_len_host == 0) { 
+    if (data_len_host == 0) {
         success = true;
         Logger::debug("TCPSocket (fd " + std::to_string(getRawSocketDescriptor()) + ")::receiveAllDataWithLengthPrefix: Received empty message (length prefix was 0).");
         return "";
@@ -639,7 +646,7 @@ std::string TCPSocket::receiveAllDataWithLengthPrefix(bool& success, int timeout
 
     if (data_len_host > MAX_MESSAGE_PAYLOAD_SIZE) {
         Logger::error("TCPSocket (fd " + std::to_string(getRawSocketDescriptor()) + ")::receiveAllDataWithLengthPrefix: Declared message size (" + std::to_string(data_len_host) + " bytes) exceeds MAX_MESSAGE_PAYLOAD_SIZE (" + std::to_string(MAX_MESSAGE_PAYLOAD_SIZE) + "). Possible DoS or protocol error. Closing socket.");
-        closeSocket(); 
+        closeSocket();
         return "";
     }
 
@@ -654,10 +661,10 @@ std::string TCPSocket::receiveAllDataWithLengthPrefix(bool& success, int timeout
         } else if (bytes_payload_received < 0 && isValid()) {
             Logger::error("TCPSocket (fd " + std::to_string(getRawSocketDescriptor()) + ")::receiveAllDataWithLengthPrefix: Socket error while receiving payload.");
         }
-        return ""; 
+        return "";
     }
 
-    success = true; 
+    success = true;
     return std::string(data_buffer_vec.data(), data_len_host);
 }
 
@@ -669,7 +676,7 @@ std::string TCPSocket::receiveAllDataWithLengthPrefix(bool& success, int timeout
 bool TCPSocket::setNonBlocking(bool non_blocking) {
     if (!isValid()) { Logger::error("TCPSocket::setNonBlocking: Called on an invalid socket."); return false; }
 #ifdef _WIN32
-    u_long mode = non_blocking ? 1 : 0; 
+    u_long mode = non_blocking ? 1 : 0;
     if (ioctlsocket(socket_fd_, FIONBIO, &mode) != 0) {
         Logger::error("TCPSocket::setNonBlocking: ioctlsocket(FIONBIO) failed. WSAError: " + std::to_string(WSAGetLastError()));
         return false;
@@ -707,8 +714,8 @@ bool TCPSocket::setRecvTimeout(int timeout_ms) {
     }
 #else // POSIX
     timeval tv;
-    tv.tv_sec = timeout_ms / 1000;              
-    tv.tv_usec = (timeout_ms % 1000) * 1000;    
+    tv.tv_sec = timeout_ms / 1000;
+    tv.tv_usec = (timeout_ms % 1000) * 1000;
     if (setsockopt(socket_fd_, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0) {
         Logger::error("TCPSocket::setRecvTimeout (POSIX): setsockopt failed. Errno(" + std::to_string(errno) + "): " + std::strerror(errno));
         return false;

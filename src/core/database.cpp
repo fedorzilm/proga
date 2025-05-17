@@ -4,7 +4,7 @@
  * \brief Реализация класса Database для управления коллекцией записей ProviderRecord.
  */
 #include "database.h"
-#include "logger.h"     
+#include "logger.h"
 #include <filesystem>   // Для std::filesystem::weakly_canonical, std::filesystem::path
 #include <algorithm>    // Для std::sort, std::unique, std::remove_if
 #include <sstream>      // Для std::ostringstream (в сообщениях об ошибках)
@@ -23,7 +23,7 @@ Database::Database() noexcept : records_(), currentFilename_("") {
  */
 FileOperationResult Database::loadFromFile(const std::string& filename) {
     FileOperationResult result;
-    result.success = false; 
+    result.success = false;
 
     Logger::info("Database Load: Попытка загрузки данных из файла: '" + filename + "'");
     std::ifstream inFile(filename);
@@ -36,9 +36,10 @@ FileOperationResult Database::loadFromFile(const std::string& filename) {
 
     records_.clear(); // Очищаем текущие записи перед загрузкой новых
     ProviderRecord tempRecord;
-    unsigned long attemptedToRead = 0; 
+    unsigned long attemptedToRead = 0;
     std::string line_buffer_for_skip; // Для пропуска "сломанных" строк
     std::ostringstream skipped_log_stream; // Для сбора информации о первых нескольких пропущенных записях
+    const int MAX_DETAILED_SKIPPED_ERRORS = 3; // Макс. кол-во ошибок формата для детального лога в error_details
 
     int line_num_approx = 0; // Приблизительный номер строки для логов
 
@@ -56,8 +57,6 @@ FileOperationResult Database::loadFromFile(const std::string& filename) {
 
         attemptedToRead++;
         line_num_approx++; // Приблизительно для каждой новой записи
-        
-        // std::streampos pos_before_read = inFile.tellg(); // Для отладки, если нужно
 
         if (inFile >> tempRecord) { // Используем operator>> для ProviderRecord
             records_.push_back(tempRecord);
@@ -65,12 +64,15 @@ FileOperationResult Database::loadFromFile(const std::string& filename) {
         } else { // Ошибка чтения записи
             if (inFile.eof()) { // Если ошибка произошла из-за конца файла (например, неполная последняя запись)
                 if (attemptedToRead == result.records_processed + 1 && records_.empty() && attemptedToRead == 1) {
-                    // Файл был пуст или содержал только пробелы/невалидные данные с самого начала
                     Logger::info("Database Load: Файл '" + filename + "' пуст или не содержит валидных записей.");
                 } else if (attemptedToRead > result.records_processed){ // Неполная запись в конце
                      Logger::warn("Database Load: Обнаружена неполная запись в конце файла '" + filename + "' (строка ~" + std::to_string(line_num_approx) + ").");
                      result.records_skipped++;
-                     if(result.records_skipped <= 5) skipped_log_stream << "Запись #" << attemptedToRead << " (неполная в EOF). ";
+                     if(result.records_skipped <= MAX_DETAILED_SKIPPED_ERRORS) {
+                        skipped_log_stream << "Запись #" << attemptedToRead << " (неполная в EOF). ";
+                        if (!result.error_details.empty()) result.error_details += "; ";
+                        result.error_details += "Record #" + std::to_string(attemptedToRead) + " incomplete at EOF (near line ~" + std::to_string(line_num_approx) + ")";
+                     }
                 }
                 break; // Выход из цикла чтения, если EOF
             }
@@ -80,7 +82,7 @@ FileOperationResult Database::loadFromFile(const std::string& filename) {
                 Logger::error("Database Load: " + result.error_details);
                 result.records_skipped = attemptedToRead - result.records_processed; // Все оставшиеся считаем пропущенными
                 inFile.close();
-                return result; 
+                return result;
             }
 
             // Если не EOF и не BAD, значит ошибка формата в текущей записи
@@ -89,21 +91,24 @@ FileOperationResult Database::loadFromFile(const std::string& filename) {
                                    "\" (строка ~" + std::to_string(line_num_approx) +") не может быть полностью прочитана/разобрана. Запись пропущена.";
             Logger::warn("Database Load: " + skip_msg_detail);
             result.records_skipped++;
-            if(result.records_skipped <= 5) skipped_log_stream << "Запись #" << attemptedToRead << " (ошибка формата). ";
-            
+            if(result.records_skipped <= MAX_DETAILED_SKIPPED_ERRORS) { // Ограничиваем количество деталей
+                skipped_log_stream << "Запись #" << attemptedToRead << " (ошибка формата). ";
+                if (!result.error_details.empty()) result.error_details += "; ";
+                result.error_details += "Record #" + std::to_string(attemptedToRead) + " format error (near line ~" + std::to_string(line_num_approx) + ")";
+            }
+
             inFile.clear(); // Сбрасываем флаги ошибок потока (например, failbit), чтобы можно было продолжить
-            // Пропускаем оставшуюся часть "сломанной" строки до конца или до следующей записи
             if (!std::getline(inFile, line_buffer_for_skip)) { // Читаем до конца текущей (возможно, битой) строки
                  if (!inFile.eof()) { // Если это не конец файла, значит ошибка при пропуске
-                    result.error_details += " Критическая ошибка при попытке пропустить некорректную запись #" + std::to_string(attemptedToRead) + ".";
-                    Logger::error("Database Load: " + result.error_details);
+                    std::string critical_skip_err = " Критическая ошибка при попытке пропустить некорректную запись #" + std::to_string(attemptedToRead) + ".";
+                    result.error_details += critical_skip_err;
+                    Logger::error("Database Load: " + critical_skip_err);
                  }
                  break; // Выход из цикла, если не удалось пропустить строку или EOF
             }
-            // line_num_approx уже инкрементирован
         }
     }
-end_loop:; // Метка для goto
+end_loop:;
 
     inFile.close();
 
@@ -114,30 +119,31 @@ end_loop:; // Метка для goto
         user_msg_oss << " Пропущено из-за ошибок формата или неполных данных: " << result.records_skipped << ".";
     }
     result.user_message = user_msg_oss.str();
-    
+
     std::string log_details_skipped = skipped_log_stream.str();
-    Logger::info("Database Load: " + result.user_message + 
+    Logger::info("Database Load: " + result.user_message +
                  (log_details_skipped.empty() ? "" : " Детали первых пропущенных: " + log_details_skipped));
 
-    // Успех, если хотя бы одна запись загружена, ИЛИ если файл был пуст (0 attempted, 0 processed),
-    // ИЛИ если были попытки, но все пропущено, но файл не был испорчен IO ошибкой.
-    // Главное, чтобы не было IO error.
-    if (result.error_details.find("IO error") == std::string::npos) {
-        result.success = true; 
-        // Обновляем currentFilename, даже если загружено 0 записей, но файл был успешно "обработан" (открыт и прочитан до конца)
+    if (result.error_details.find("IO error") == std::string::npos && result.error_details.find("File open failed") == std::string::npos ) {
+        result.success = true;
+        std::filesystem::path canonical_path;
         try {
-            currentFilename_ = std::filesystem::weakly_canonical(filename).string();
+            if (std::filesystem::exists(filename)) {
+                 canonical_path = std::filesystem::canonical(filename);
+            } else {
+                 canonical_path = std::filesystem::weakly_canonical(filename);
+            }
+            currentFilename_ = canonical_path.string();
             Logger::info("Database: currentFilename_ обновлен на: '" + currentFilename_ + "' после операции LOAD.");
         } catch (const std::filesystem::filesystem_error& fs_err) {
-            Logger::error("Database Load: Ошибка канонизации пути '" + filename + "' для currentFilename_: " + fs_err.what());
-            currentFilename_ = filename; // Сохраняем как есть, если канонизация не удалась
+            Logger::error("Database Load: Ошибка канонизации пути '" + filename + "' для currentFilename_: " + fs_err.what() + ". Имя текущего файла не будет обновлено, используется исходное имя.");
+            currentFilename_ = filename;
         }
     } else {
-        result.success = false; // Если была IO ошибка, то операция не успешна
-        currentFilename_.clear(); // Сбрасываем имя файла, если загрузка провалилась из-за IO
+        result.success = false;
     }
-    
-    return result; 
+
+    return result;
 }
 
 /*!
@@ -167,22 +173,22 @@ FileOperationResult Database::saveToFile(const std::string& filename_param) {
 
     for (size_t i = 0; i < records_.size(); ++i) {
         outFile << records_[i];
-        if (i < records_.size() - 1) { // Добавляем новую строку после каждой записи, КРОМЕ последней
+        if (i < records_.size() - 1) {
             outFile << "\n";
         }
     }
     result.records_processed = records_.size();
 
-    if (outFile.bad()) { // Проверяем на ошибки записи ДО закрытия
+    if (outFile.bad()) {
         result.user_message = "Ошибка [БД]: Произошла ошибка ввода-вывода при записи в файл \"" + filename_param + "\". Данные могут быть повреждены.";
         result.error_details = "IO error during writing to " + filename_param;
         Logger::error("Database Save: " + result.error_details);
-        outFile.close(); // Пытаемся закрыть в любом случае
+        outFile.close();
         return result;
     }
 
-    outFile.close(); // Закрываем файл
-    if (!outFile.good()) { // Проверяем состояние потока ПОСЛЕ закрытия (например, ошибка при flush)
+    outFile.close();
+    if (!outFile.good()) {
         result.user_message = "Ошибка [БД]: Не удалось корректно сохранить все данные и/или закрыть файл \"" + filename_param + "\".";
         result.error_details = "Error after closing file (e.g. flush error) " + filename_param;
         Logger::error("Database Save: " + result.error_details);
@@ -192,12 +198,21 @@ FileOperationResult Database::saveToFile(const std::string& filename_param) {
     result.success = true;
     result.user_message = "Успешно сохранено " + std::to_string(result.records_processed) + " записей в файл \"" + filename_param + "\".";
     Logger::info("Database Save: " + result.user_message);
-    try {
-        currentFilename_ = std::filesystem::weakly_canonical(filename_param).string();
-        Logger::info("Database: currentFilename_ обновлен на: '" + currentFilename_ + "' после операции SAVE.");
-    } catch (const std::filesystem::filesystem_error& fs_err) {
-        Logger::error("Database Save: Ошибка канонизации пути '" + filename_param + "' для currentFilename_: " + fs_err.what());
-        currentFilename_ = filename_param; 
+    if (result.success) {
+        std::filesystem::path canonical_path;
+        try {
+            if (std::filesystem::exists(filename_param)) {
+                canonical_path = std::filesystem::canonical(filename_param);
+            } else {
+                Logger::warn("Database Save: Файл '" + filename_param + "' не найден после успешного сохранения для канонизации. Используется weakly_canonical.");
+                canonical_path = std::filesystem::weakly_canonical(filename_param);
+            }
+            currentFilename_ = canonical_path.string();
+            Logger::info("Database: currentFilename_ обновлен на: '" + currentFilename_ + "' после операции SAVE.");
+        } catch (const std::filesystem::filesystem_error& fs_err) {
+            Logger::error("Database Save: Ошибка канонизации пути '" + filename_param + "' для currentFilename_: " + fs_err.what() + ". Имя текущего файла не будет обновлено, используется исходное имя.");
+            currentFilename_ = filename_param;
+        }
     }
     return result;
 }
@@ -213,7 +228,7 @@ FileOperationResult Database::saveToFile() {
         result.user_message = "Ошибка [БД]: Имя файла для SAVE не было ранее установлено (через LOAD или SAVE с именем). Операция невозможна.";
         result.error_details = "SAVE failed: currentFilename_ is empty.";
         Logger::error("Database Save (no-arg): " + result.error_details);
-        return result; 
+        return result;
     }
     return saveToFile(currentFilename_);
 }
@@ -250,7 +265,6 @@ const ProviderRecord& Database::getRecordByIndex(size_t index) const {
  * \throw std::out_of_range Если индекс невалиден.
  */
 ProviderRecord& Database::getRecordByIndexForEdit(size_t index) {
-    // Logger::warn("Database: getRecordByIndexForEdit используется. Рассмотрите editRecord для более безопасного обновления.");
     if (index >= records_.size()) {
         std::string msg = "getRecordByIndexForEdit: Индекс " + std::to_string(index) + " выходит за пределы для редактирования. Размер БД: " + std::to_string(records_.size());
         Logger::error("Database: " + msg);
@@ -338,9 +352,8 @@ std::vector<size_t> Database::findRecordsByCriteria(
     const IPAddress& ip, bool useIpFilter,
     const Date& recordDate, bool useDateFilter) const {
     std::vector<size_t> indices;
-    // Logger::debug("Database FindByCriteria: Начало поиска...");
     for (size_t i = 0; i < records_.size(); ++i) {
-        bool match = true; // Предполагаем, что запись соответствует, пока не доказано обратное
+        bool match = true;
         if (useNameFilter && records_[i].getName() != name) {
             match = false;
         }
@@ -409,9 +422,8 @@ size_t Database::deleteRecordsByIndices(std::vector<size_t>& indices) {
         return 0;
     }
 
-    // Удаляем невалидные индексы (больше или равные размеру records_)
     indices.erase(std::remove_if(indices.begin(), indices.end(),
-                                 [this](size_t idx){ return idx >= records_.size(); }), // Используем this для доступа к records_.size()
+                                 [this](size_t idx){ return idx >= records_.size(); }),
                   indices.end());
 
     if (indices.empty()) {
@@ -419,12 +431,8 @@ size_t Database::deleteRecordsByIndices(std::vector<size_t>& indices) {
         return 0;
     }
 
-    // Сортируем и удаляем дубликаты для эффективности и предотвращения ошибок
     std::sort(indices.begin(), indices.end());
     indices.erase(std::unique(indices.begin(), indices.end()), indices.end());
-
-    // Сортируем в обратном порядке для корректного удаления из std::vector
-    // (при удалении элемента индексы последующих смещаются)
     std::sort(indices.rbegin(), indices.rend());
 
     size_t count_deleted = 0;
@@ -432,16 +440,13 @@ size_t Database::deleteRecordsByIndices(std::vector<size_t>& indices) {
     bool first_log = true;
 
     for (size_t index_to_delete : indices) {
-        // Дополнительная проверка, хотя после фильтрации и сортировки она должна быть избыточной
-        if (index_to_delete < records_.size()) { 
-            // ProviderRecord record_for_log = records_[index_to_delete]; // Для логирования информации об удаляемой записи
+        if (index_to_delete < records_.size()) {
             records_.erase(records_.begin() + static_cast<ptrdiff_t>(index_to_delete));
             count_deleted++;
             if (!first_log) deleted_indices_log_stream << ", ";
-            deleted_indices_log_stream << index_to_delete; // << " ('" << record_for_log.getName() << "')";
+            deleted_indices_log_stream << index_to_delete;
             first_log = false;
         } else {
-            // Этого не должно происходить, если логика фильтрации верна
             Logger::warn("Database DeleteByIndices: Попытка удалить невалидный индекс " + std::to_string(index_to_delete) + " после всех фильтраций.");
         }
     }
@@ -466,8 +471,6 @@ double Database::calculateChargesForRecord(const ProviderRecord& record,
                                          const TariffPlan& plan,
                                          const Date& startDate,
                                          const Date& endDate) const {
-    // Дата самой записи должна попадать в период [startDate, endDate],
-    // а не данные о трафике (которые относятся к дате записи).
     if (record.getDate() < startDate || record.getDate() > endDate) {
         Logger::debug("Database CalcCharges: Запись '" + record.getName() + "' от " + record.getDate().toString() +
                       " не попадает в расчетный период [" + startDate.toString() + " - " + endDate.toString() + "]. Начислено: 0.0");
@@ -478,32 +481,27 @@ double Database::calculateChargesForRecord(const ProviderRecord& record,
     const auto& trafficIn = record.getTrafficInByHour();
     const auto& trafficOut = record.getTrafficOutByHour();
 
-    // Проверка на корректность размеров векторов трафика (должна быть выполнена при создании ProviderRecord)
     if (trafficIn.size() != static_cast<size_t>(HOURS_IN_DAY) || trafficOut.size() != static_cast<size_t>(HOURS_IN_DAY)) {
         Logger::error("Database CalcCharges: ОШИБКА: Запись для \"" + record.getName() + "\" от " + record.getDate().toString()
                       + " имеет некорректный размер данных о трафике (вх: " + std::to_string(trafficIn.size())
                       + ", исх: " + std::to_string(trafficOut.size()) + "). Расчет для этой записи не будет произведен (вернет 0).");
-        return 0.0; 
+        return 0.0;
     }
 
     try {
         for (int hour = 0; hour < HOURS_IN_DAY; ++hour) {
             size_t hour_idx = static_cast<size_t>(hour);
-            // Сравниваем с DOUBLE_EPSILON, так как трафик - это double
-            if (trafficIn[hour_idx] > DOUBLE_EPSILON) { 
+            if (trafficIn[hour_idx] > DOUBLE_EPSILON) {
                  totalCharge += trafficIn[hour_idx] * plan.getCostInForHour(hour);
             }
             if (trafficOut[hour_idx] > DOUBLE_EPSILON) {
                  totalCharge += trafficOut[hour_idx] * plan.getCostOutForHour(hour);
             }
         }
-    } catch (const std::out_of_range& e_tariff) { // От plan.getCost*ForHour
+    } catch (const std::out_of_range& e_tariff) {
         Logger::error("Database CalcCharges: Ошибка при расчете платежей для \"" + record.getName() + "\" от " + record.getDate().toString()
                       + " (проблема с тарифным планом или индексом часа): " + e_tariff.what());
-        // В данном случае не перебрасываем, а возвращаем 0, чтобы не прерывать расчет для других записей.
-        // Но вызывающий код (ServerCommandHandler) должен быть уведомлен, если это критично.
-        // Пока что просто логируем и возвращаем 0 для этой записи.
-        return 0.0; 
+        return 0.0;
     }
     Logger::debug("Database CalcCharges: Для '" + record.getName() + "' (" + record.getDate().toString() +
                   ") начислено: " + std::to_string(totalCharge) + " за период [" + startDate.toString() + " - " + endDate.toString() + "].");
@@ -515,7 +513,7 @@ double Database::calculateChargesForRecord(const ProviderRecord& record,
  */
 void Database::clearAllRecords() noexcept {
     records_.clear();
-    records_.shrink_to_fit(); // Освобождаем память, занимаемую вектором
+    records_.shrink_to_fit();
     currentFilename_.clear();
     Logger::info("Database: Все записи очищены, currentFilename сброшен.");
 }

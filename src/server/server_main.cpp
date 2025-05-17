@@ -24,9 +24,11 @@ std::atomic<bool> g_server_should_stop(false);
 #ifndef _WIN32 // POSIX-специфичная обработка сигналов
 void signalHandler(int signum) {
     std::string msg = "[ServerMain] Signal (" + std::to_string(signum) + ") received. Requesting server shutdown.";
-    (void)write(STDERR_FILENO, "\n", 1); // Новая строка для чистоты вывода
-    (void)write(STDERR_FILENO, msg.c_str(), msg.length());
-    (void)write(STDERR_FILENO, "\n", 1);
+    // Используем [[maybe_unused]] для подавления предупреждений -Wunused-result
+    // так как в обработчике сигнала сложная обработка ошибок write нецелесообразна.
+    [[maybe_unused]] ssize_t written_nl1 = write(STDERR_FILENO, "\n", 1); // Новая строка для чистоты вывода
+    [[maybe_unused]] ssize_t written_msg = write(STDERR_FILENO, msg.c_str(), msg.length());
+    [[maybe_unused]] ssize_t written_nl2 = write(STDERR_FILENO, "\n", 1);
     g_server_should_stop.store(true);
 }
 
