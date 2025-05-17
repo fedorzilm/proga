@@ -1,508 +1,626 @@
 /*!
  * \file server_command_handler.cpp
  * \author Fedor Zilnitskiy
- * \brief Реализация класса ServerCommandHandler для обработки команд сервера.
+ * \brief Реализация класса ServerCommandHandler для обработки команд сервера и отправки структурированных ответов.
  */
 #include "server_command_handler.h"
 #include "logger.h"
-#include "common_defs.h" 
-#include "file_utils.h"  
-#include "provider_record.h"
-#include "ip_address.h"
-#include "date.h"
-#include <filesystem> 
-#include <iomanip>    
-#include <algorithm>  
-#include <cstdio>     
-#include <cctype>     
+#include "file_utils.h"      // Включаем для FileUtils::getSafeServerFilePath
+#include "provider_record.h" // ProviderRecord::operator<<
+#include "ip_address.h"      // Для парсинга IP в handleEdit
+#include "date.h"            // Для парсинга Date в handleEdit
 
-#ifdef _WIN32
-#include <direct.h> 
-#else
-#include <unistd.h> 
-#endif
+#include <filesystem> // Для std::filesystem::path
+#include <iomanip>    // Для std::fixed, std::setprecision
+#include <algorithm>  // Для std::min, std::transform (для schToUpper)
+#include <vector>     // Для std::vector
 
-static std::string toUpperSCH(std::string s) {
+
+// Вспомогательная функция для преобразования строки в верхний регистр
+// Помечена как static, чтобы ограничить область видимости этим файлом
+static std::string schToUpper(std::string s) {
     std::transform(s.begin(), s.end(), s.begin(),
                    [](unsigned char c){ return static_cast<char>(std::toupper(c)); });
     return s;
 }
 
-std::filesystem::path getSafeServerFilePath_SCH(
-    const std::string& root_for_data_ops_str, 
-    const std::string& requested_filename_from_client,
-    const std::string& default_data_subdir) 
-{
-    const std::string sch_log_prefix = "[SCH GetSafePath] ";
-    // Logger::debug(sch_log_prefix + "Вызван с root_for_data_ops_str='" + root_for_data_ops_str +
-    //               "', requested_filename_from_client='" + requested_filename_from_client +
-    //               "', default_data_subdir='" + default_data_subdir + "'");
-
-    std::filesystem::path server_data_search_root;
-
-    if (!root_for_data_ops_str.empty()) {
-        try {
-            server_data_search_root = std::filesystem::weakly_canonical(std::filesystem::absolute(root_for_data_ops_str));
-            // Logger::debug(sch_log_prefix + "Используется предоставленный базовый путь для данных (разрешенный): '" + server_data_search_root.string() + "'");
-        } catch (const std::filesystem::filesystem_error& e) {
-            Logger::error(sch_log_prefix + "Ошибка при обработке предоставленного базового пути '" + root_for_data_ops_str + "': " + e.what() + ". Попытка использовать CWD.");
-            server_data_search_root = std::filesystem::current_path(); 
-        }
-    } else { 
-        char current_path_cstr[1024] = {0};
-        #ifdef _WIN32
-            if (_getcwd(current_path_cstr, sizeof(current_path_cstr) -1) == nullptr) {
-                Logger::error(sch_log_prefix + "Критическая ошибка: не удалось получить текущую рабочую директорию (_getcwd).");
-                throw std::runtime_error("Критическая ошибка сервера: не удалось получить CWD (_getcwd).");
-            }
-        #else
-            if (getcwd(current_path_cstr, sizeof(current_path_cstr) -1) == nullptr) {
-                Logger::error(sch_log_prefix + "Критическая ошибка: не удалось получить текущую рабочую директорию (getcwd). Errno: " + std::to_string(errno));
-                throw std::runtime_error("Критическая ошибка сервера: не удалось получить CWD (getcwd).");
-            }
-        #endif
-        
-        try {
-            server_data_search_root = getProjectRootPath(current_path_cstr); 
-            // Logger::warn(sch_log_prefix + "Базовый путь для данных не был предоставлен (root_for_data_ops_str пуст). Определен корень проекта от CWD: '" + server_data_search_root.string() + "'");
-        } catch (const std::exception& e_gprp) {
-            Logger::error(sch_log_prefix + "Ошибка при авто-определении корня проекта от CWD ('" + current_path_cstr + "'): " + std::string(e_gprp.what()) + ". Используется CWD как корень данных.");
-            server_data_search_root = std::filesystem::path(current_path_cstr);
-        }
-    }
-
-    std::filesystem::path data_storage_dir = server_data_search_root / default_data_subdir;
-
-    if (!std::filesystem::exists(data_storage_dir)) {
-        try {
-            if (std::filesystem::create_directories(data_storage_dir)) {
-                // Logger::info(sch_log_prefix + "Успешно создана директория для данных сервера: '" + data_storage_dir.string() + "'");
-            } else {
-                 if (!std::filesystem::exists(data_storage_dir)) {
-                    Logger::error(sch_log_prefix + "Не удалось создать директорию данных '" + data_storage_dir.string() + "' и она не существует после попытки создания.");
-                    throw std::runtime_error("Критическая ошибка сервера: не удалось создать директорию для хранения баз данных: " + data_storage_dir.string());
-                 }
-            }
-        } catch (const std::filesystem::filesystem_error& e_create_dir) {
-            Logger::error(sch_log_prefix + "Не удалось создать директорию данных '" + data_storage_dir.string() + "': " + e_create_dir.what());
-            throw std::runtime_error("Критическая ошибка сервера: не удалось создать директорию для хранения баз данных: " + data_storage_dir.string());
-        }
-    } else if (!std::filesystem::is_directory(data_storage_dir)){ 
-        Logger::error(sch_log_prefix + "Путь для хранения данных '" + data_storage_dir.string() + "' существует, но не является директорией!");
-        throw std::runtime_error("Критическая ошибка сервера: путь для хранения баз данных не является директорией.");
-    }
-
-    std::filesystem::path client_filename_obj(requested_filename_from_client);
-    std::string clean_filename = client_filename_obj.filename().string(); 
-
-    if (clean_filename.empty() || clean_filename == "." || clean_filename == "..") {
-        // Logger::warn(sch_log_prefix + "Недопустимое имя файла от клиента: '" + requested_filename_from_client + "' (пустое или состоит из точек).");
-        throw std::runtime_error("Недопустимое имя файла от клиента: '" + requested_filename_from_client + "'.");
-    }
-    if (clean_filename.find_first_of("/\\:*?\"<>|") != std::string::npos) {
-        // Logger::warn(sch_log_prefix + "Имя файла '" + clean_filename + "' от клиента содержит недопустимые символы.");
-        throw std::runtime_error("Имя файла '" + clean_filename + "' содержит недопустимые символы (/\\:*?\"<>|).");
-    }
-    const size_t MAX_FILENAME_LEN = 250; 
-    if (clean_filename.length() > MAX_FILENAME_LEN) {
-        // Logger::warn(sch_log_prefix + "Имя файла от клиента слишком длинное: '" + clean_filename + "' (макс " + std::to_string(MAX_FILENAME_LEN) + ").");
-        throw std::runtime_error("Имя файла слишком длинное (макс. " + std::to_string(MAX_FILENAME_LEN) + " символов): '" + clean_filename + "'");
-    }
-
-    std::filesystem::path target_path = data_storage_dir / clean_filename;
-    std::filesystem::path canonical_target_path;
-    std::filesystem::path canonical_data_root_resolved; 
-
-    try {
-        canonical_target_path = std::filesystem::weakly_canonical(target_path);
-        canonical_data_root_resolved = std::filesystem::weakly_canonical(data_storage_dir); 
-    } catch (const std::filesystem::filesystem_error& e_canon) {
-        Logger::error(sch_log_prefix + "Ошибка канонизации пути '" + target_path.string() + "' или '" + data_storage_dir.string() + "': " + e_canon.what());
-        throw std::runtime_error("Ошибка сервера при обработке пути к файлу.");
-    }
-
-    std::string target_str_norm = canonical_target_path.lexically_normal().string();
-    std::string root_str_norm = canonical_data_root_resolved.lexically_normal().string();
-    
-    // Ensure root_str_norm ends with a preferred_separator if it's not empty and target_str_norm is longer
-    // This handles cases where root_str_norm might be something like "/tmp/data" and target "/tmp/datafiles".
-    std::string root_str_norm_with_sep = root_str_norm;
-    if (!root_str_norm_with_sep.empty() && root_str_norm_with_sep.back() != std::filesystem::path::preferred_separator) {
-        root_str_norm_with_sep += std::filesystem::path::preferred_separator;
-    }
-    
-    // Check if target_str_norm starts with root_str_norm_with_sep (or is equal to root_str_norm if it's a directory itself - but we save files)
-    // And ensure target is not just the root directory itself.
-    bool path_is_safe = (target_str_norm.rfind(root_str_norm_with_sep, 0) == 0 && target_str_norm.length() > root_str_norm_with_sep.length());
-    if (root_str_norm_with_sep.length() == 1 && root_str_norm_with_sep[0] == std::filesystem::path::preferred_separator) { // Root is just "/"
-         path_is_safe = (target_str_norm.rfind(root_str_norm_with_sep, 0) == 0 && target_str_norm.length() > 1);
-    }
-
-
-    if (!path_is_safe)
-    {
-        Logger::error(sch_log_prefix + "Попытка доступа к файлу вне разрешенной директории (нарушение песочницы)! "
-                      "Запрошено клиентом: '" + requested_filename_from_client + "', "
-                      "Очищенное имя: '" + clean_filename + "', "
-                      "Целевой путь (канонический, нормализованный): '" + target_str_norm + "', "
-                      "Ожидалось внутри (канонический, нормализованный корень данных): '" + root_str_norm + "'.");
-        throw std::runtime_error("Доступ к файлу запрещен (нарушение безопасности сервера).");
-    }
-    
-    // Logger::debug(sch_log_prefix + "Безопасный абсолютный путь к файлу на сервере: '" + canonical_target_path.string() + "'");
-    return canonical_target_path;
-}
-
 
 ServerCommandHandler::ServerCommandHandler(Database& db, TariffPlan& plan, const std::string& server_data_path_base)
     : db_(db), tariff_plan_(plan), server_data_base_path_(server_data_path_base) {
+    Logger::debug("[ServerCommandHandler] Constructor: Initialized with server_data_base_path: '" + server_data_base_path_ + "'");
 }
 
-std::string ServerCommandHandler::processCommand(const Query& query) {
-    std::ostringstream response_oss;
-    const std::string sch_cmd_log_prefix = "[SCH CmdProc] ";
+void ServerCommandHandler::formatRecordsToStream(std::ostringstream& oss,
+                                               const std::vector<ProviderRecord>& records,
+                                               size_t start_index,
+                                               size_t count,
+                                               bool add_display_indices,
+                                               [[maybe_unused]] const std::map<size_t, size_t>* db_indices_map) const {
+    if (start_index >= records.size()) {
+        return; 
+    }
+    size_t end_i = std::min(start_index + count, records.size());
+    for (size_t i = start_index; i < end_i; ++i) {
+        if (add_display_indices) {
+            // Выводим индекс относительно начала текущей переданной коллекции записей (чанка или полной выборки)
+            oss << "Record (Display Index in current set #" << (i - start_index) << "):\n";
+        }
+        oss << records[i]; 
+        if (i < end_i - 1) { 
+            oss << "\n-----------------------------------------------------------------\n";
+        }
+    }
+}
+
+// Этот метод теперь public, как мы решили для обработки ошибок парсинга в Server::clientHandlerTask
+void ServerCommandHandler::sendSingleMessageResponsePart(std::shared_ptr<TCPSocket> client_socket, const ServerResponse& response) const {
+    if (!client_socket || !client_socket->isValid()) {
+        Logger::error("[SCH SendSinglePart] Attempt to send response via invalid socket. Client may have disconnected.");
+        return;
+    }
+    std::ostringstream header_oss;
+    header_oss << SRV_HEADER_STATUS << ": " << response.statusCode << "\n"
+               << SRV_HEADER_MESSAGE << ": " << (response.statusMessage.empty() ? (response.statusCode < SRV_STATUS_BAD_REQUEST ? "OK" : "Error") : response.statusMessage) << "\n"
+               << SRV_HEADER_RECORDS_IN_PAYLOAD << ": " << response.recordsInPayload << "\n"
+               << SRV_HEADER_TOTAL_RECORDS << ": " << response.totalRecordsOverall << "\n" 
+               << SRV_HEADER_PAYLOAD_TYPE << ": " << response.payloadType << "\n"
+               << SRV_HEADER_DATA_MARKER << "\n";
+
+    std::string payload_str = response.payloadDataStream.str();
+    std::string full_response_str = header_oss.str() + payload_str;
+
+    std::string log_msg_prefix = "[SCH SendSinglePart] Sending ";
+    if(response.statusCode == SRV_STATUS_OK_MULTI_PART_BEGIN) log_msg_prefix += "first chunk: ";
+    else if(response.statusCode == SRV_STATUS_OK_MULTI_PART_CHUNK) log_msg_prefix += "next chunk: ";
+    else if(response.statusCode == SRV_STATUS_OK_MULTI_PART_END) log_msg_prefix += "end chunk message: ";
+    else log_msg_prefix += "response: ";
+
+    Logger::debug(log_msg_prefix + "Status=" + std::to_string(response.statusCode) +
+                  ", Msg=\"" + response.statusMessage + "\"" +
+                  ", HeaderLen: " + std::to_string(header_oss.str().length()) +
+                  ", PayloadLen: " + std::to_string(payload_str.length()) +
+                  ", TotalMsgLen: " + std::to_string(full_response_str.length()));
+
+    if (!client_socket->sendAllDataWithLengthPrefix(full_response_str)) {
+        Logger::error(log_msg_prefix + "Failed to send response part to client. Socket error: " + std::to_string(client_socket->getLastSocketError()) + ". Client may have disconnected.");
+    }
+}
+
+void ServerCommandHandler::sendRemainingChunks(std::shared_ptr<TCPSocket> client_socket, const ServerResponse& initialResponseContext) const {
+    if (!client_socket || !client_socket->isValid()) {
+        Logger::error("[SCH SendRemChunks] Invalid socket for sending remaining chunks. Client may have disconnected.");
+        return;
+    }
+
+    const auto& records_to_chunk = initialResponseContext.recordsForChunking;
+    size_t total_records_in_set = initialResponseContext.totalRecordsOverall; 
+    size_t records_sent_in_first_chunk = initialResponseContext.recordsInPayload; 
+
+    if (records_sent_in_first_chunk > total_records_in_set) { 
+        Logger::error("[SCH SendRemChunks] Inconsistency: records_sent_in_first_chunk (" + std::to_string(records_sent_in_first_chunk) +
+                      ") > total_records_in_set (" + std::to_string(total_records_in_set) + "). Aborting chunking.");
+        return;
+    }
+
+    size_t records_remaining_to_send = total_records_in_set - records_sent_in_first_chunk;
+    size_t current_offset_in_recordsForChunking = records_sent_in_first_chunk; 
+
+    Logger::debug("[SCH SendRemChunks] Starting to send remaining chunks. Total in set: " + std::to_string(total_records_in_set) +
+                  ", Sent in first chunk: " + std::to_string(records_sent_in_first_chunk) + ", Remaining to send: " + std::to_string(records_remaining_to_send));
+
+    while (records_remaining_to_send > 0) {
+        if (!client_socket->isValid()) {
+            Logger::warn("[SCH SendRemChunks] Client connection lost while sending subsequent chunks.");
+            return;
+        }
+        ServerResponse chunk_response; 
+        chunk_response.statusCode = SRV_STATUS_OK_MULTI_PART_CHUNK;
+        chunk_response.payloadType = SRV_PAYLOAD_TYPE_PROVIDER_RECORDS_LIST; 
+        
+        size_t num_records_in_this_chunk = std::min(records_remaining_to_send, SRV_DEFAULT_CHUNK_RECORDS_COUNT);
+        
+        formatRecordsToStream(chunk_response.payloadDataStream, 
+                              records_to_chunk, 
+                              current_offset_in_recordsForChunking, 
+                              num_records_in_this_chunk, 
+                              true); 
+        
+        chunk_response.recordsInPayload = num_records_in_this_chunk;
+        chunk_response.totalRecordsOverall = 0; 
+        chunk_response.statusMessage = "Data chunk (records " + 
+                                     std::to_string(current_offset_in_recordsForChunking + 1) + "-" + 
+                                     std::to_string(current_offset_in_recordsForChunking + num_records_in_this_chunk) + 
+                                     " of " + std::to_string(total_records_in_set) + ").";
+
+        sendSingleMessageResponsePart(client_socket, chunk_response);
+
+        current_offset_in_recordsForChunking += num_records_in_this_chunk;
+        records_remaining_to_send -= num_records_in_this_chunk;
+        Logger::debug("[SCH SendRemChunks] Sent chunk with " + std::to_string(num_records_in_this_chunk) + " records. Current offset in chunking data: " + std::to_string(current_offset_in_recordsForChunking) + ", Remaining to send: " + std::to_string(records_remaining_to_send));
+    }
+
+    if (client_socket->isValid()) {
+        ServerResponse end_response;
+        end_response.statusCode = SRV_STATUS_OK_MULTI_PART_END;
+        end_response.statusMessage = "Multi-part data transfer complete. Total records sent: " + std::to_string(total_records_in_set);
+        end_response.payloadType = SRV_PAYLOAD_TYPE_NONE;
+        sendSingleMessageResponsePart(client_socket, end_response);
+        Logger::debug("[SCH SendRemChunks] Sent multi-part end message.");
+    }
+}
+
+
+void ServerCommandHandler::processAndSendCommandResponse(std::shared_ptr<TCPSocket> client_socket, const Query& query) {
+    ServerResponse response; 
+    const std::string sch_cmd_log_prefix = "[SCH ProcAndSend] ";
+    Logger::debug(sch_cmd_log_prefix + "Processing command: " + query.originalQueryString);
 
     try {
-        // Logger::info(sch_cmd_log_prefix + "Обработка команды типа " + std::to_string(static_cast<int>(query.type)) +
-        //              " (оригинал: \"" + query.originalQueryString + "\")");
-
         switch (query.type) {
-            case QueryType::ADD:               handleAdd(query.params, response_oss); break;
-            case QueryType::SELECT:            handleSelect(query.params, response_oss); break;
-            case QueryType::DELETE:            handleDelete(query.params, response_oss); break;
-            case QueryType::EDIT:              handleEdit(query.params, response_oss); break;
-            case QueryType::CALCULATE_CHARGES: handleCalculateCharges(query.params, response_oss); break;
-            case QueryType::PRINT_ALL:         handlePrintAll(response_oss); break;
-            case QueryType::LOAD:              handleLoad(query.params, response_oss); break;
-            case QueryType::SAVE:              handleSave(query.params, response_oss); break;
-            case QueryType::HELP:
-                response_oss << "OK\nПоддерживаемые команды сервера: ADD, SELECT, DELETE, EDIT, CALCULATE_CHARGES, PRINT_ALL, LOAD, SAVE, EXIT.\n"
-                             << "Для детального синтаксиса используйте локальную команду HELP на стороне клиента.\n";
-                // Logger::info(sch_cmd_log_prefix + "Обработан запрос HELP от клиента.");
-                break;
-            case QueryType::EXIT:
-                response_oss << "OK\nСервер подтверждает команду EXIT. Завершение сессии.\n";
-                // Logger::info(sch_cmd_log_prefix + "Подтверждение команды EXIT для клиента. Клиент должен разорвать соединение.");
-                break;
+            case QueryType::ADD:               handleAdd(query.params, response); break;
+            case QueryType::SELECT:            handleSelect(query.params, response); break;
+            case QueryType::DELETE:            handleDelete(query.params, response); break;
+            case QueryType::EDIT:              handleEdit(query.params, response); break;
+            case QueryType::CALCULATE_CHARGES: handleCalculateCharges(query.params, response); break;
+            case QueryType::PRINT_ALL:         handlePrintAll(response); break;
+            case QueryType::LOAD:              handleLoad(query.params, response); break;
+            case QueryType::SAVE:              handleSave(query.params, response); break;
+            case QueryType::HELP:              handleHelp(response); break;
+            case QueryType::EXIT:              handleExit(response); break; 
             case QueryType::UNKNOWN:
-            default:
-                response_oss << "ERROR\nОшибка [Сервер]: Неизвестная или некорректно сформированная команда получена сервером.\n"
-                             << "Оригинальный запрос: \"" << query.originalQueryString << "\"\n";
-                Logger::warn(sch_cmd_log_prefix + "Получен неизвестный или некорректный тип запроса (тип: "
-                             + std::to_string(static_cast<int>(query.type)) + ", оригинал: '" + query.originalQueryString + "').");
-                break;
+            default:                           handleUnknown(query, response); break;
         }
     } catch (const std::invalid_argument& iae) {
-        response_oss.str(""); response_oss.clear(); 
-        response_oss << "ERROR\nОшибка [Сервер]: Неверный аргумент в параметрах команды -> " << iae.what() << "\n"
-                     << "Оригинальный запрос: \"" << query.originalQueryString << "\"\n";
-        Logger::error(sch_cmd_log_prefix + "InvalidArgument при обработке '" + query.originalQueryString + "': " + iae.what());
+        response.reset(); 
+        response.statusCode = SRV_STATUS_BAD_REQUEST;
+        response.statusMessage = "Invalid argument in command: " + std::string(iae.what());
+        response.payloadType = SRV_PAYLOAD_TYPE_ERROR_INFO;
+        response.payloadDataStream << "Error Detail: Invalid argument provided to server.\n"
+                                   << "Server Message: " << iae.what() << "\n"
+                                   << "Original query: \"" << query.originalQueryString << "\"\n";
+        Logger::error(sch_cmd_log_prefix + "InvalidArgument for '" + query.originalQueryString + "': " + iae.what());
     } catch (const std::out_of_range& oor) {
-        response_oss.str(""); response_oss.clear();
-        response_oss << "ERROR\nОшибка [Сервер]: Запрошенный элемент (например, по индексу) вне допустимого диапазона -> " << oor.what() << "\n"
-                     << "Оригинальный запрос: \"" << query.originalQueryString << "\"\n";
-        Logger::error(sch_cmd_log_prefix + "OutOfRange при обработке '" + query.originalQueryString + "': " + oor.what());
-    } catch (const std::runtime_error& rte) {
-        response_oss.str(""); response_oss.clear();
-        response_oss << "ERROR\nОшибка выполнения на сервере -> " << rte.what() << "\n"
-                     << "Оригинальный запрос: \"" << query.originalQueryString << "\"\n";
-        Logger::error(sch_cmd_log_prefix + "RuntimeError при обработке '" + query.originalQueryString + "': " + rte.what());
-    } catch (const std::exception& e) { 
-        response_oss.str(""); response_oss.clear();
-        response_oss << "ERROR\nНепредвиденная системная ошибка на сервере -> " << e.what() << "\n"
-                     << "Оригинальный запрос: \"" << query.originalQueryString << "\"\n";
-        Logger::error(sch_cmd_log_prefix + "StdException при обработке '" + query.originalQueryString + "': " + e.what());
-    } catch (...) { 
-        response_oss.str(""); response_oss.clear();
-        response_oss << "ERROR\nНеизвестная критическая ошибка произошла на сервере при обработке вашего запроса.\n"
-                     << "Оригинальный запрос: \"" << query.originalQueryString << "\"\n";
-        Logger::error(sch_cmd_log_prefix + "Неизвестное исключение (...) при обработке '" + query.originalQueryString + "'.");
+        response.reset();
+        response.statusCode = SRV_STATUS_NOT_FOUND; 
+        response.statusMessage = "Requested item not found or out of range: " + std::string(oor.what());
+        response.payloadType = SRV_PAYLOAD_TYPE_ERROR_INFO;
+        response.payloadDataStream << "Error Detail: Item not found or index out of range.\n"
+                                   << "Server Message: " << oor.what() << "\n"
+                                   << "Original query: \"" << query.originalQueryString << "\"\n";
+        Logger::error(sch_cmd_log_prefix + "OutOfRange for '" + query.originalQueryString + "': " + oor.what());
+    } catch (const std::filesystem::filesystem_error& fs_err) { 
+        response.reset();
+        response.statusCode = SRV_STATUS_SERVER_ERROR;
+        response.statusMessage = "File system error on server: " + std::string(fs_err.what());
+        response.payloadType = SRV_PAYLOAD_TYPE_ERROR_INFO;
+        response.payloadDataStream << "Error Detail: A file system error occurred on the server.\n"
+                                   << "Server Message: " << fs_err.what() << "\n" // Используем what() для filesystem_error
+                                   << "Original query: \"" << query.originalQueryString << "\"\n";
+        Logger::error(sch_cmd_log_prefix + "FilesystemError for '" + query.originalQueryString + "': " + fs_err.what());
     }
-    return response_oss.str();
+    catch (const std::runtime_error& rte) { // Ловим std::runtime_error после filesystem_error
+        response.reset();
+        response.statusCode = SRV_STATUS_SERVER_ERROR;
+        response.statusMessage = "Server runtime error: " + std::string(rte.what());
+        response.payloadType = SRV_PAYLOAD_TYPE_ERROR_INFO;
+        response.payloadDataStream << "Error Detail: A runtime error occurred on the server.\n"
+                                   << "Server Message: " << rte.what() << "\n"
+                                   << "Original query: \"" << query.originalQueryString << "\"\n";
+        Logger::error(sch_cmd_log_prefix + "RuntimeError for '" + query.originalQueryString + "': " + rte.what());
+    } catch (const std::exception& e) { // Ловим все остальные std::exception
+        response.reset();
+        response.statusCode = SRV_STATUS_SERVER_ERROR;
+        response.statusMessage = "Unexpected server error: " + std::string(e.what());
+        response.payloadType = SRV_PAYLOAD_TYPE_ERROR_INFO;
+        response.payloadDataStream << "Error Detail: An unexpected system error occurred on the server.\n"
+                                   << "Server Message: " << e.what() << "\n"
+                                   << "Original query: \"" << query.originalQueryString << "\"\n";
+        Logger::error(sch_cmd_log_prefix + "StdException for '" + query.originalQueryString + "': " + e.what());
+    } catch (...) {
+        response.reset();
+        response.statusCode = SRV_STATUS_SERVER_ERROR;
+        response.statusMessage = "Unknown critical server error occurred.";
+        response.payloadType = SRV_PAYLOAD_TYPE_ERROR_INFO;
+        response.payloadDataStream << "Error Detail: An unknown critical error occurred on the server.\n"
+                                   << "Original query: \"" << query.originalQueryString << "\"\n";
+        Logger::error(sch_cmd_log_prefix + "Unknown exception (...) for '" + query.originalQueryString + "'.");
+    }
+
+    if (response.requiresChunking && response.statusCode == SRV_STATUS_OK_MULTI_PART_BEGIN) {
+        // sendRemainingChunks сам отправит и первый чанк (из response) и остальные
+        sendRemainingChunks(client_socket, response); 
+    } else {
+        sendSingleMessageResponsePart(client_socket, response);
+    }
 }
 
-void ServerCommandHandler::handleAdd(const QueryParameters& params, std::ostringstream& oss) {
+
+// --- Реализации handleXXX методов ---
+
+void ServerCommandHandler::handleAdd(const QueryParameters& params, ServerResponse& response) {
     std::vector<double> trafficInToAdd = params.trafficInData;
-    std::vector<double> trafficOutToAdd = params.trafficOutData;
+    std::vector<double> trafficOutToAdd = params.trafficOutData; 
 
-    if (trafficInToAdd.empty() && params.hasTrafficInToSet) { 
-        throw std::runtime_error("ADD: Блок TRAFFIC_IN был указан, но не содержит данных (ошибка парсера).");
-    }
-    if (trafficOutToAdd.empty() && params.hasTrafficOutToSet) {
-         throw std::runtime_error("ADD: Блок TRAFFIC_OUT был указан, но не содержит данных (ошибка парсера).");
-    }
-
-    if (!params.hasTrafficInToSet) { 
+    if (trafficInToAdd.empty() && !params.hasTrafficInToSet) {
         trafficInToAdd.assign(HOURS_IN_DAY, 0.0);
+    } else if (params.hasTrafficInToSet && trafficInToAdd.size() != static_cast<size_t>(HOURS_IN_DAY)) {
+        throw std::invalid_argument("ADD: TRAFFIC_IN must contain " + std::to_string(HOURS_IN_DAY) + " values, received " + std::to_string(trafficInToAdd.size()));
     }
-    if (!params.hasTrafficOutToSet) { 
+
+    if (trafficOutToAdd.empty() && !params.hasTrafficOutToSet) {
         trafficOutToAdd.assign(HOURS_IN_DAY, 0.0);
+    } else if (params.hasTrafficOutToSet && trafficOutToAdd.size() != static_cast<size_t>(HOURS_IN_DAY)) {
+         throw std::invalid_argument("ADD: TRAFFIC_OUT must contain " + std::to_string(HOURS_IN_DAY) + " values, received " + std::to_string(trafficOutToAdd.size()));
     }
     
-    if (trafficInToAdd.size() != static_cast<size_t>(HOURS_IN_DAY) && params.hasTrafficInToSet) {
-        throw std::runtime_error("ADD: TRAFFIC_IN должен содержать " + std::to_string(HOURS_IN_DAY) + " значений, получено " + std::to_string(trafficInToAdd.size()));
-    }
-     if (trafficInToAdd.size() != static_cast<size_t>(HOURS_IN_DAY) && !params.hasTrafficInToSet && !trafficInToAdd.empty()) { // Если не было hasTrafficInToSet, но вектор не пуст (не должен быть)
-        throw std::logic_error("ADD: Внутренняя ошибка - TRAFFIC_IN не был SET, но вектор не пуст и неверного размера.");
-    }
-    if (trafficOutToAdd.size() != static_cast<size_t>(HOURS_IN_DAY) && params.hasTrafficOutToSet) {
-         throw std::runtime_error("ADD: TRAFFIC_OUT должен содержать " + std::to_string(HOURS_IN_DAY) + " значений, получено " + std::to_string(trafficOutToAdd.size()));
-    }
-    if (trafficOutToAdd.size() != static_cast<size_t>(HOURS_IN_DAY) && !params.hasTrafficOutToSet && !trafficOutToAdd.empty()) {
-        throw std::logic_error("ADD: Внутренняя ошибка - TRAFFIC_OUT не был SET, но вектор не пуст и неверного размера.");
-    }
-
     ProviderRecord newRecord(
         params.subscriberNameData,
         params.ipAddressData,
         params.dateData,
-        trafficInToAdd,  
+        trafficInToAdd,
         trafficOutToAdd
-    );
+    ); 
+
     db_.addRecord(newRecord);
-    oss << "OK\nЗапись для абонента '" << params.subscriberNameData << "' успешно добавлена на сервере.\n";
+
+    response.statusCode = SRV_STATUS_OK;
+    response.statusMessage = "Record added successfully.";
+    response.payloadType = SRV_PAYLOAD_TYPE_SIMPLE_MESSAGE;
+    response.payloadDataStream << "Record for subscriber '" << params.subscriberNameData << "' was successfully added to the database.";
 }
 
-void ServerCommandHandler::handleSelect(const QueryParameters& params, std::ostringstream& oss) {
-    std::vector<size_t> indices = db_.findRecordsByCriteria(
+void ServerCommandHandler::handleSelect(const QueryParameters& params, ServerResponse& response) {
+    std::vector<size_t> original_indices = db_.findRecordsByCriteria(
         params.criteriaName, params.useNameFilter,
         params.criteriaIpAddress, params.useIpFilter,
         params.criteriaDate, params.useDateFilter
     );
 
-    oss << "OK\n"; // Всегда начинаем с OK, даже если ничего не найдено
-    if (indices.empty()) {
-        oss << "Записи, соответствующие критериям, не найдены на сервере.\n";
-    } else {
-        oss << "Найдено " << indices.size() << " записей, соответствующих критериям на сервере:\n";
-        oss << "-----------------------------------------------------------------\n";
-        for (size_t i = 0; i < indices.size(); ++i) {
-             try {
-                const ProviderRecord& rec = db_.getRecordByIndex(indices[i]);
-                oss << "Запись (Индекс в БД #" << indices[i] << "):\n";
-                oss << rec; 
-                oss << "\n-----------------------------------------------------------------\n";
-            } catch (const std::out_of_range& e) {
-                oss << "ПРЕДУПРЕЖДЕНИЕ [Сервер]: Не удалось получить доступ к записи по индексу " << indices[i]
-                    << " (возможно, была удалена): " << e.what() << "\n";
-                Logger::warn("[SCH Select] Ошибка доступа к записи " + std::to_string(indices[i]) + " при выводе результатов: " + e.what());
-            }
+    if (original_indices.empty()) {
+        response.statusCode = SRV_STATUS_OK; 
+        response.statusMessage = "No records matching criteria found.";
+        response.payloadType = SRV_PAYLOAD_TYPE_SIMPLE_MESSAGE;
+        response.payloadDataStream << "No records matching the specified criteria were found on the server.";
+        return;
+    }
+    
+    std::vector<ProviderRecord> found_records_copies;
+    found_records_copies.reserve(original_indices.size());
+    for (size_t db_idx : original_indices) { 
+        try {
+            found_records_copies.push_back(db_.getRecordByIndex(db_idx));
+        } catch (const std::out_of_range& e) {
+            Logger::warn("[SCH Select] Record with original DB index " + std::to_string(db_idx) + " not found during collection: " + e.what());
         }
+    }
+    
+    if (found_records_copies.empty() && !original_indices.empty()){
+        response.statusCode = SRV_STATUS_NOT_FOUND;
+        response.statusMessage = "Records found by criteria were no longer accessible.";
+        response.payloadType = SRV_PAYLOAD_TYPE_SIMPLE_MESSAGE;
+        response.payloadDataStream << "Records initially found by criteria could not be retrieved (e.g., deleted concurrently).";
+        return;
+    }
+
+    response.statusMessage = std::to_string(found_records_copies.size()) + " record(s) selected successfully.";
+    response.payloadType = SRV_PAYLOAD_TYPE_PROVIDER_RECORDS_LIST;
+    response.totalRecordsOverall = found_records_copies.size(); 
+
+    if (found_records_copies.size() > SRV_CHUNKING_THRESHOLD_RECORDS) {
+        response.statusCode = SRV_STATUS_OK_MULTI_PART_BEGIN;
+        response.requiresChunking = true;
+        response.recordsForChunking = std::move(found_records_copies);
+        response.recordsInPayload = std::min(response.totalRecordsOverall, SRV_DEFAULT_CHUNK_RECORDS_COUNT); 
+        formatRecordsToStream(response.payloadDataStream, response.recordsForChunking, 0, response.recordsInPayload, true); 
+        Logger::info("[SCH Select] Found " + std::to_string(response.totalRecordsOverall) + " records. Using chunking. First chunk has " + std::to_string(response.recordsInPayload) + " records.");
+    } else {
+        response.statusCode = SRV_STATUS_OK;
+        response.requiresChunking = false;
+        formatRecordsToStream(response.payloadDataStream, found_records_copies, 0, found_records_copies.size(), true);
+        response.recordsInPayload = found_records_copies.size();
+        Logger::info("[SCH Select] Found " + std::to_string(found_records_copies.size()) + " records. Sending as single part.");
     }
 }
 
-void ServerCommandHandler::handleDelete(const QueryParameters& params, std::ostringstream& oss) {
+void ServerCommandHandler::handlePrintAll(ServerResponse& response) {
+    std::vector<ProviderRecord> all_records_copy = db_.getAllRecords(); 
+
+    if (all_records_copy.empty()) {
+        response.statusCode = SRV_STATUS_OK;
+        response.statusMessage = "Database is empty.";
+        response.payloadType = SRV_PAYLOAD_TYPE_SIMPLE_MESSAGE;
+        response.payloadDataStream << "The database on the server is currently empty.";
+        return;
+    }
+
+    response.statusMessage = "All " + std::to_string(all_records_copy.size()) + " records retrieved successfully.";
+    response.payloadType = SRV_PAYLOAD_TYPE_PROVIDER_RECORDS_LIST;
+    response.totalRecordsOverall = all_records_copy.size();
+
+    if (all_records_copy.size() > SRV_CHUNKING_THRESHOLD_RECORDS) {
+        response.statusCode = SRV_STATUS_OK_MULTI_PART_BEGIN;
+        response.requiresChunking = true;
+        response.recordsForChunking = std::move(all_records_copy);
+        response.recordsInPayload = std::min(response.totalRecordsOverall, SRV_DEFAULT_CHUNK_RECORDS_COUNT);
+        formatRecordsToStream(response.payloadDataStream, response.recordsForChunking, 0, response.recordsInPayload, true);
+        Logger::info("[SCH PrintAll] Database contains " + std::to_string(response.totalRecordsOverall) + " records. Using chunking. First chunk has " + std::to_string(response.recordsInPayload) + " records.");
+    } else {
+        response.statusCode = SRV_STATUS_OK;
+        response.requiresChunking = false;
+        formatRecordsToStream(response.payloadDataStream, all_records_copy, 0, all_records_copy.size(), true);
+        response.recordsInPayload = all_records_copy.size();
+        Logger::info("[SCH PrintAll] Database contains " + std::to_string(all_records_copy.size()) + " records. Sending as single part.");
+    }
+}
+
+
+void ServerCommandHandler::handleDelete(const QueryParameters& params, ServerResponse& response) {
     std::vector<size_t> indices_to_delete = db_.findRecordsByCriteria(
         params.criteriaName, params.useNameFilter,
         params.criteriaIpAddress, params.useIpFilter,
         params.criteriaDate, params.useDateFilter
     );
-    oss << "OK\n";
+
     if (indices_to_delete.empty()) {
-        oss << "Не найдено записей, соответствующих критериям для удаления на сервере.\n";
+        response.statusCode = SRV_STATUS_OK; 
+        response.statusMessage = "No records found matching criteria for deletion.";
+        response.payloadType = SRV_PAYLOAD_TYPE_SIMPLE_MESSAGE;
+        response.payloadDataStream << "No records were found matching the specified criteria for deletion on the server.";
         return;
     }
 
-    size_t num_deleted = db_.deleteRecordsByIndices(indices_to_delete);
-    oss << "Успешно удалено " << num_deleted << " записей сервером.\n";
+    size_t num_deleted = db_.deleteRecordsByIndices(indices_to_delete); 
+    response.statusCode = SRV_STATUS_OK;
+    response.statusMessage = std::to_string(num_deleted) + " record(s) deleted successfully.";
+    response.payloadType = SRV_PAYLOAD_TYPE_SIMPLE_MESSAGE;
+    response.payloadDataStream << "Successfully deleted " << num_deleted << " record(s) from the server database.";
+    response.recordsInPayload = num_deleted; 
 }
 
-void ServerCommandHandler::handleEdit(const QueryParameters& params, std::ostringstream& oss) {
+void ServerCommandHandler::handleEdit(const QueryParameters& params, ServerResponse& response) {
     if (params.setData.empty() && !params.hasTrafficInToSet && !params.hasTrafficOutToSet) {
-        throw std::runtime_error("EDIT: Отсутствует секция SET или она не содержит полей для изменения.");
+        throw std::invalid_argument("EDIT: SET section is missing or does not contain any fields to modify.");
     }
-    
+
     std::vector<size_t> indices_to_edit = db_.findRecordsByCriteria(
         params.criteriaName, params.useNameFilter,
         params.criteriaIpAddress, params.useIpFilter,
         params.criteriaDate, params.useDateFilter
     );
-    oss << "OK\n";
+
     if (indices_to_edit.empty()) {
-        oss << "Не найдено записей, соответствующих критериям для редактирования.\n";
-        Logger::info("[SCH Edit] Не найдено записей для редактирования по критериям.");
+        response.statusCode = SRV_STATUS_NOT_FOUND;
+        response.statusMessage = "No records found matching criteria for editing.";
+        response.payloadType = SRV_PAYLOAD_TYPE_SIMPLE_MESSAGE;
+        response.payloadDataStream << "No records were found matching the specified criteria for editing.";
+        Logger::info("[SCH Edit] No records found for editing based on criteria.");
         return;
     }
-    
-    size_t target_db_index = indices_to_edit[0];
+
+    size_t target_db_index = indices_to_edit[0]; 
+    std::string edit_prelude_message_str;
+
     if (indices_to_edit.size() > 1) {
-        oss << "EDIT Предупреждение [Сервер]: Критерии соответствуют " << indices_to_edit.size()
-            << " записям. Будет отредактирована только первая найденная запись (Индекс в БД: " << target_db_index << ").\n";
-        Logger::warn("[SCH Edit] Найдено " + std::to_string(indices_to_edit.size()) +
-                     " записей для редактирования, будет обработана только первая с индексом " + std::to_string(target_db_index));
+        std::ostringstream warn_oss;
+        warn_oss << "EDIT Warning: Criteria matched " << indices_to_edit.size()
+                 << " records. Only the first found record (Original DB Index: " << target_db_index << ") will be edited.\n";
+        edit_prelude_message_str = warn_oss.str();
+        Logger::warn("[SCH Edit] Found " + std::to_string(indices_to_edit.size()) +
+                     " records for editing, will process only the first (original DB index " + std::to_string(target_db_index) + ")");
     }
 
-    ProviderRecord record_to_edit = db_.getRecordByIndex(target_db_index);
-    ProviderRecord original_record_for_comparison = record_to_edit; // Для проверки, были ли реальные изменения
-    bool changed_applied = false;
-    // std::ostringstream changes_log_details_ss; // Не используется в текущей реализации для вывода
-
-     for (const auto& pair : params.setData) {
-        const std::string& field_key_upper = toUpperSCH(pair.first);
+    ProviderRecord record_to_edit = db_.getRecordByIndex(target_db_index); 
+    ProviderRecord original_record_for_comparison = record_to_edit;
+    
+    for (const auto& pair : params.setData) {
+        const std::string& field_key_upper = schToUpper(pair.first); 
         const std::string& value_str = pair.second;
-        if (field_key_upper == "FIO") {
-            record_to_edit.setName(value_str);
-        } else if (field_key_upper == "IP") {
-            IPAddress new_ip;
-            std::istringstream ip_ss(value_str);
-            if (!(ip_ss >> new_ip) || (ip_ss >> std::ws && !ip_ss.eof())) {
-                throw std::invalid_argument("EDIT SET: Некорректный формат IP-адреса '" + value_str + "' в секции SET.");
-            }
+        if (field_key_upper == "FIO") { record_to_edit.setName(value_str); }
+        else if (field_key_upper == "IP") {
+            IPAddress new_ip; std::istringstream ip_ss(value_str);
+            if (!(ip_ss >> new_ip) || (ip_ss.peek() != EOF && !(ip_ss >> std::ws).eof() ) ) throw std::invalid_argument("EDIT SET: Invalid IP format '" + value_str + "' for IP field.");
             record_to_edit.setIpAddress(new_ip);
         } else if (field_key_upper == "DATE") {
-            Date new_date;
-            std::istringstream date_ss(value_str);
-            if (!(date_ss >> new_date) || (date_ss >> std::ws && !date_ss.eof())) {
-                 throw std::invalid_argument("EDIT SET: Некорректный формат даты '" + value_str + "' в секции SET.");
-            }
+            Date new_date; std::istringstream date_ss(value_str);
+            if (!(date_ss >> new_date) || (date_ss.peek() != EOF && !(date_ss >> std::ws).eof() ) ) throw std::invalid_argument("EDIT SET: Invalid Date format '" + value_str + "' for DATE field.");
             record_to_edit.setDate(new_date);
         } else {
-             // QueryParser должен был отфильтровать неизвестные поля, но на всякий случай.
-             Logger::warn("[SCH Edit] Обнаружено неизвестное поле '" + pair.first + "' в params.setData при попытке редактирования. Пропущено.");
+             Logger::warn("[SCH Edit] Unknown field '" + pair.first + "' in SET data. Skipped.");
         }
     }
     if (params.hasTrafficInToSet) {
-        if(params.trafficInData.size() != static_cast<size_t>(HOURS_IN_DAY)) throw std::runtime_error("EDIT SET: TRAFFIC_IN должен содержать " + std::to_string(HOURS_IN_DAY) + " значений.");
+        if(params.trafficInData.size() != static_cast<size_t>(HOURS_IN_DAY)) throw std::invalid_argument("EDIT SET: TRAFFIC_IN block must contain " + std::to_string(HOURS_IN_DAY) + " values.");
         record_to_edit.setTrafficInByHour(params.trafficInData);
     }
     if (params.hasTrafficOutToSet) {
-        if(params.trafficOutData.size() != static_cast<size_t>(HOURS_IN_DAY)) throw std::runtime_error("EDIT SET: TRAFFIC_OUT должен содержать " + std::to_string(HOURS_IN_DAY) + " значений.");
+        if(params.trafficOutData.size() != static_cast<size_t>(HOURS_IN_DAY)) throw std::invalid_argument("EDIT SET: TRAFFIC_OUT block must contain " + std::to_string(HOURS_IN_DAY) + " values.");
         record_to_edit.setTrafficOutByHour(params.trafficOutData);
     }
-
-    changed_applied = (record_to_edit != original_record_for_comparison);
+    
+    bool changed_applied = (record_to_edit != original_record_for_comparison);
 
     if (changed_applied) {
         db_.editRecord(target_db_index, record_to_edit);
-        oss << "Запись с Индексом в БД " << target_db_index << " успешно отредактирована сервером.\n";
-        oss << "Новые данные:\n-----------------------------------------------------------------\n";
-        oss << "Запись (Индекс в БД: " << target_db_index << "):\n" << db_.getRecordByIndex(target_db_index);
-        oss << "\n-----------------------------------------------------------------\n";
+        response.statusCode = SRV_STATUS_OK;
+        response.statusMessage = "Record edited successfully.";
+        response.payloadType = SRV_PAYLOAD_TYPE_PROVIDER_RECORDS_LIST; 
+        response.payloadDataStream << edit_prelude_message_str
+                                   << "Record with Original DB Index " << target_db_index << " was successfully edited.\n"
+                                   << "New data for the record:\n-----------------------------------------------------------------\n";
+        const ProviderRecord& final_record_state = db_.getRecordByIndex(target_db_index);
+        std::vector<ProviderRecord> temp_records_vec; temp_records_vec.push_back(final_record_state);
+        formatRecordsToStream(response.payloadDataStream, temp_records_vec, 0, 1, false); 
+        response.payloadDataStream << "\n-----------------------------------------------------------------";
+        response.recordsInPayload = 1;
     } else {
-        oss << "EDIT Информация [Сервер]: Не было применено никаких изменений к записи (новые данные идентичны существующим или поля в SET не привели к изменениям).\n";
+        response.statusCode = SRV_STATUS_OK;
+        response.statusMessage = "No changes applied to the record (new data was identical or no effective changes made).";
+        response.payloadType = SRV_PAYLOAD_TYPE_SIMPLE_MESSAGE;
+        response.payloadDataStream << edit_prelude_message_str
+                                   << "EDIT Information: No changes were applied to the record as the new data was identical to the existing data, or the SET fields did not result in any effective changes.";
     }
 }
 
-void ServerCommandHandler::handleCalculateCharges(const QueryParameters& params, std::ostringstream& oss) {
+void ServerCommandHandler::handleCalculateCharges(const QueryParameters& params, ServerResponse& response) {
     if (!params.useStartDateFilter || !params.useEndDateFilter) {
-        throw std::runtime_error("CALCULATE_CHARGES: Команда требует обязательного указания START_DATE и END_DATE.");
+        throw std::invalid_argument("CALCULATE_CHARGES: Command requires both START_DATE and END_DATE parameters to be specified.");
     }
     if (params.criteriaStartDate > params.criteriaEndDate) {
-         throw std::runtime_error("CALCULATE_CHARGES: START_DATE (" + params.criteriaStartDate.toString() + ") не может быть позже END_DATE (" + params.criteriaEndDate.toString() + ").");
+         throw std::invalid_argument("CALCULATE_CHARGES: START_DATE (" + params.criteriaStartDate.toString() + ") cannot be later than END_DATE (" + params.criteriaEndDate.toString() + ").");
     }
 
-    std::vector<ProviderRecord> records_to_process;
-     if (!params.useNameFilter && !params.useIpFilter && !params.useDateFilter) {
-        records_to_process = db_.getAllRecords();
+    std::vector<ProviderRecord> records_to_process_copies;
+    if (!params.useNameFilter && !params.useIpFilter && !params.useDateFilter) {
+        records_to_process_copies = db_.getAllRecords(); 
     } else {
         std::vector<size_t> record_indices = db_.findRecordsByCriteria(
             params.criteriaName, params.useNameFilter,
             params.criteriaIpAddress, params.useIpFilter,
-            params.criteriaDate, params.useDateFilter);
+            params.criteriaDate, params.useDateFilter
+        );
         if (record_indices.empty()){
-            oss << "OK\nНе найдено записей по указанным критериям фильтрации для расчета начислений.\n";
+            response.statusCode = SRV_STATUS_OK; 
+            response.statusMessage = "No records found matching filter criteria for charge calculation.";
+            response.payloadType = SRV_PAYLOAD_TYPE_SIMPLE_MESSAGE;
+            response.payloadDataStream << "No records found based on the specified filter criteria for charge calculation.";
             return;
         }
-        records_to_process.reserve(record_indices.size());
+        records_to_process_copies.reserve(record_indices.size());
         for(size_t index : record_indices) {
-            try { records_to_process.push_back(db_.getRecordByIndex(index)); }
-            catch (const std::out_of_range&) { }
+            try { records_to_process_copies.push_back(db_.getRecordByIndex(index)); } 
+            catch (const std::out_of_range&) { /* Игнорируем, если удалена */ }
         }
     }
-    oss << "OK\n";
-     if (records_to_process.empty()){ 
-        oss << "В базе данных (или по указанным критериям) нет записей для расчета начислений.\n";
+    
+    if (records_to_process_copies.empty()){
+        response.statusCode = SRV_STATUS_OK;
+        response.statusMessage = "No records available (or matching filter) to calculate charges for.";
+        response.payloadType = SRV_PAYLOAD_TYPE_SIMPLE_MESSAGE;
+        response.payloadDataStream << "No records are available in the database (or match filter criteria) for charge calculation.";
         return;
     }
-
+    
     double grandTotalCharges = 0.0;
-    oss << "Отчет по расчету стоимости за период (" << params.criteriaStartDate.toString() << " - " << params.criteriaEndDate.toString() << ") на сервере:\n";
-    oss << "-----------------------------------------------------------------\n";
-    oss << std::fixed << std::setprecision(2); 
-    bool charges_calculated_for_at_least_one = false;
+    response.payloadDataStream << "Charge calculation report for period (" << params.criteriaStartDate.toString() << " - " << params.criteriaEndDate.toString() << "):\n";
+    response.payloadDataStream << "-----------------------------------------------------------------\n";
+    response.payloadDataStream << std::fixed << std::setprecision(2);
+    bool charges_calculated_for_at_least_one_record = false;
 
-    for (const auto& record : records_to_process) {
-        if (record.getDate() >= params.criteriaStartDate && record.getDate() <= params.criteriaEndDate) {
-            double charge = 0.0;
-            try {
-                charge = db_.calculateChargesForRecord(record, tariff_plan_, params.criteriaStartDate, params.criteriaEndDate);
-                oss << "Абонент: " << record.getName() << " (IP: " << record.getIpAddress().toString()
-                    << ", Дата записи: " << record.getDate().toString() << ") | Начислено: " << charge << "\n";
-                charges_calculated_for_at_least_one = true;
-                grandTotalCharges += charge;
-            }
-            catch (const std::exception& e) { 
-                oss << "Абонент: " << record.getName() << " | Ошибка расчета: " << e.what() << "\n";
-                Logger::error("[SCH Calc] Ошибка расчета для " + record.getName() + ": " + e.what());
-            }
-        }
-    }
-    if (!charges_calculated_for_at_least_one && !records_to_process.empty()) { 
-        oss << "Для выбранных записей начисления отсутствуют (возможно, все записи вне периода расчета или тарифы нулевые/ошибочны).\n";
-    } 
-
-    oss << "-----------------------------------------------------------------\n";
-    oss << "ИТОГО начислено для выборки на сервере: " << grandTotalCharges << "\n";
-    oss << "-----------------------------------------------------------------\n";
-}
-
-void ServerCommandHandler::handlePrintAll(std::ostringstream& oss) {
-    const size_t count = db_.getRecordCount();
-    oss << "OK\n"; 
-    if (count == 0) {
-        oss << "База данных на сервере пуста.\n";
-    } else {
-        oss << "Содержимое базы данных на сервере (" << count << " записей):\n";
-        oss << "-----------------------------------------------------------------\n";
-        for (size_t i = 0; i < count; ++i) {
-            try {
-                const ProviderRecord& rec = db_.getRecordByIndex(i);
-                oss << "Запись (Индекс в БД #" << i << "):\n";
-                oss << rec; 
-                oss << "\n-----------------------------------------------------------------\n";
-            } catch(const std::out_of_range& e) {
-                Logger::error("[SCH PrintAll] Критическая ошибка доступа к записи " + std::to_string(i) + ": " + e.what());
-                oss << "ОШИБКА [Сервер]: Внутренняя ошибка при доступе к записи по индексу " << i << ": " << e.what() << "\n";
-                oss << "-----------------------------------------------------------------\n";
+    for (const auto& record_copy : records_to_process_copies) {
+        double charge_for_record = 0.0;
+        try {
+            charge_for_record = db_.calculateChargesForRecord(record_copy, tariff_plan_, params.criteriaStartDate, params.criteriaEndDate);
+            if (record_copy.getDate() >= params.criteriaStartDate && record_copy.getDate() <= params.criteriaEndDate) {
+                 if (charge_for_record > DOUBLE_EPSILON || charge_for_record < -DOUBLE_EPSILON || records_to_process_copies.size() == 1) { 
+                    response.payloadDataStream << "Subscriber: " << record_copy.getName()
+                                            << " (IP: " << record_copy.getIpAddress().toString()
+                                            << ", Record Date: " << record_copy.getDate().toString()
+                                            << ") | Calculated Charge: " << charge_for_record << "\n";
+                    charges_calculated_for_at_least_one_record = true;
+                 }
+                grandTotalCharges += charge_for_record;
             }
         }
+        catch (const std::exception& e) { 
+            response.payloadDataStream << "Subscriber: " << record_copy.getName() << " | Error during charge calculation: " << e.what() << "\n";
+            Logger::error("[SCH Calc] Charge calculation error for subscriber " + record_copy.getName() + ": " + e.what());
+        }
     }
+
+    if (!charges_calculated_for_at_least_one_record && !records_to_process_copies.empty()) {
+        response.payloadDataStream << "No charges were applicable for the selected records within the specified period (or tariffs are zero/erroneous).\n";
+    }
+    response.payloadDataStream << "-----------------------------------------------------------------\n";
+    response.payloadDataStream << "GRAND TOTAL calculated charges for selection: " << grandTotalCharges << "\n";
+    response.payloadDataStream << "-----------------------------------------------------------------\n";
+
+    response.statusCode = SRV_STATUS_OK;
+    response.statusMessage = "Charge calculation completed.";
+    response.payloadType = SRV_PAYLOAD_TYPE_SIMPLE_MESSAGE; 
 }
 
-void ServerCommandHandler::handleLoad(const QueryParameters& params, std::ostringstream& oss) {
+
+void ServerCommandHandler::handleLoad(const QueryParameters& params, ServerResponse& response) {
     if (params.filename.empty()) {
-        throw std::runtime_error("LOAD: Команда требует имя файла.");
+        throw std::invalid_argument("LOAD: Command requires a filename parameter.");
     }
-    std::filesystem::path target_file_path = getSafeServerFilePath_SCH(server_data_base_path_, params.filename, DEFAULT_SERVER_DATA_SUBDIR);
+    std::filesystem::path target_file_path;
+    try {
+        // ИСПРАВЛЕНО: Используем FileUtils::getSafeServerFilePath
+        target_file_path = FileUtils::getSafeServerFilePath(server_data_base_path_, params.filename, DEFAULT_SERVER_DATA_SUBDIR); 
+        Logger::info("[SCH Load] Attempting to load from resolved safe path: '" + target_file_path.string() + "'");
+    } catch (const std::exception& e) { 
+        throw std::runtime_error("LOAD: Error resolving safe file path for '" + params.filename + "': " + std::string(e.what()));
+    }
 
-    FileOperationResult load_res = db_.loadFromFile(target_file_path.string());
+    FileOperationResult load_res = db_.loadFromFile(target_file_path.string()); 
 
-    if (load_res.success) {
-        oss << "OK\n" << load_res.user_message << "\n";
-    } else {
-        oss << "ERROR\n" << load_res.user_message << "\n";
+    response.statusCode = load_res.success ? SRV_STATUS_OK : SRV_STATUS_SERVER_ERROR; 
+    response.statusMessage = load_res.success ? "Data loaded successfully from file '" + params.filename + "'." : "Data loading from file '" + params.filename + "' failed.";
+    response.payloadType = SRV_PAYLOAD_TYPE_SIMPLE_MESSAGE;
+    response.payloadDataStream << load_res.user_message; 
+    response.recordsInPayload = load_res.records_processed; 
+    if (!load_res.success && !load_res.error_details.empty()){
+        response.payloadDataStream << "\nAdditional server error details: " << load_res.error_details;
     }
 }
 
-void ServerCommandHandler::handleSave(const QueryParameters& params, std::ostringstream& oss) {
-    std::string filename_to_save_on_server_final;
+void ServerCommandHandler::handleSave(const QueryParameters& params, ServerResponse& response) {
     FileOperationResult save_res;
+    std::string effective_filename_for_msg_and_save;
 
-    if (params.filename.empty()) { 
-        filename_to_save_on_server_final = db_.getCurrentFilename();
-        if (filename_to_save_on_server_final.empty()) {
-            throw std::runtime_error("SAVE: Имя файла для сохранения не указано и не было установлено ранее (через LOAD или SAVE с именем). Некуда сохранять.");
+    if (params.filename.empty()) {
+        effective_filename_for_msg_and_save = db_.getCurrentFilename();
+        if (effective_filename_for_msg_and_save.empty()){
+             throw std::invalid_argument("SAVE: Filename not specified and no previous file context is available on the server to save to.");
         }
+        Logger::info("[SCH Save] Attempting to save to current DB file context: '" + effective_filename_for_msg_and_save + "'");
         save_res = db_.saveToFile(); 
-    } else { 
-        std::filesystem::path target_file_path = getSafeServerFilePath_SCH(server_data_base_path_, params.filename, DEFAULT_SERVER_DATA_SUBDIR);
-        filename_to_save_on_server_final = target_file_path.string();
-        save_res = db_.saveToFile(filename_to_save_on_server_final);
+    } else {
+        std::filesystem::path target_file_path;
+        try {
+             // ИСПРАВЛЕНО: Используем FileUtils::getSafeServerFilePath
+             target_file_path = FileUtils::getSafeServerFilePath(server_data_base_path_, params.filename, DEFAULT_SERVER_DATA_SUBDIR); 
+        } catch (const std::exception& e) {
+            throw std::runtime_error("SAVE: Error resolving safe file path for '" + params.filename + "': " + std::string(e.what()));
+        }
+        effective_filename_for_msg_and_save = target_file_path.string();
+        Logger::info("[SCH Save] Attempting to save to specified file: '" + effective_filename_for_msg_and_save + "'");
+        save_res = db_.saveToFile(effective_filename_for_msg_and_save);
     }
 
-    if (save_res.success) {
-        oss << "OK\n" << save_res.user_message << "\n";
-    } else {
-        oss << "ERROR\n" << save_res.user_message << "\n";
+    response.statusCode = save_res.success ? SRV_STATUS_OK : SRV_STATUS_SERVER_ERROR;
+    response.statusMessage = save_res.success ? "Data saved successfully to file '" + effective_filename_for_msg_and_save + "'." : "Data saving to file '" + effective_filename_for_msg_and_save + "' failed.";
+    response.payloadType = SRV_PAYLOAD_TYPE_SIMPLE_MESSAGE;
+    response.payloadDataStream << save_res.user_message;
+    response.recordsInPayload = save_res.records_processed;
+     if (!save_res.success && !save_res.error_details.empty()){
+        response.payloadDataStream << "\nAdditional server error details: " << save_res.error_details;
     }
+}
+
+void ServerCommandHandler::handleHelp(ServerResponse& response) {
+    response.statusCode = SRV_STATUS_OK;
+    response.statusMessage = "Server help information provided.";
+    response.payloadType = SRV_PAYLOAD_TYPE_SIMPLE_MESSAGE;
+    response.payloadDataStream << "Supported server commands: ADD, SELECT, DELETE, EDIT, CALCULATE_CHARGES, PRINT_ALL, LOAD, SAVE, EXIT.\n"
+                               << "For detailed command syntax and parameters, please refer to the client-side HELP documentation or project specifications.\n";
+}
+
+void ServerCommandHandler::handleExit(ServerResponse& response) {
+    response.statusCode = SRV_STATUS_OK;
+    response.statusMessage = "Session termination acknowledged by server.";
+    response.payloadType = SRV_PAYLOAD_TYPE_SIMPLE_MESSAGE;
+    response.payloadDataStream << "Server acknowledges EXIT command. The client should now close the connection session.";
+}
+
+void ServerCommandHandler::handleUnknown(const Query& query, ServerResponse& response) {
+    response.statusCode = SRV_STATUS_BAD_REQUEST;
+    response.statusMessage = "Unknown or malformed command received by server.";
+    response.payloadType = SRV_PAYLOAD_TYPE_ERROR_INFO;
+    response.payloadDataStream << "Error: The server did not understand the command or its format.\n"
+                               << "Original query received by server: \"" << query.originalQueryString << "\"\n"
+                               << "Please use client-side HELP for a list of valid commands and their correct syntax.\n";
+    Logger::warn("[SCH Unknown] Received unknown/malformed query (parsed type: "
+                 + std::to_string(static_cast<int>(query.type)) + ", original string: '" + query.originalQueryString + "').");
 }

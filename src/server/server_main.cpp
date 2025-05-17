@@ -1,12 +1,12 @@
 // Предполагаемый путь: src/server/server_main.cpp
 #include "common_defs.h"    // Общие заголовки и определения
 #include "logger.h"         // Наш логгер
-#include "file_utils.h"     // Для getProjectRootPath
+#include "file_utils.h"     // Для FileUtils::getProjectRootPath и FileUtils::getProjectDataPath
 #include "database.h"       // Ядро БД
 #include "tariff_plan.h"    // Тарифный план
-#include "query_parser.h"   // Парсер запросов (может быть и не нужен здесь, если Server его не требует в конструктор)
+#include "query_parser.h"   // Парсер запросов (QueryParser теперь передается в Server)
 #include "server.h"         // Наш класс Server
-#include "server_config.h"  // <<<<<<<<<<< ADDED: Include ServerConfig header
+#include "server_config.h"  // Конфигурация сервера
 
 #include <iostream>
 #include <string>
@@ -19,17 +19,21 @@
 #include <chrono>     // Для std::chrono::*
 
 // Глобальный флаг для корректной остановки сервера по сигналу
+// Он должен быть определен только в одном .cpp файле (здесь),
+// а в других (например, server.h) объявлен как extern, если нужен.
+// В текущей структуре он используется в Server.cpp через server_main.cpp (где Server создается).
+// Если Server.h включает common_defs.h, а common_defs.h объявляет extern, то все ок.
+// В вашем common_defs.h его нет, значит server_main - единственное место.
 std::atomic<bool> g_server_should_stop(false);
 
 #ifndef _WIN32 // POSIX-специфичная обработка сигналов
+#include <unistd.h> // Для write в обработчике сигнала
+#include <cstring>  // Для std::memset, strlen в обработчике сигнала
 void signalHandler(int signum) {
-    // Это обработчик сигнала, здесь можно использовать только async-signal-safe функции.
-    // std::string и Logger::info/write могут быть небезопасны.
-    // Безопасный способ - установить флаг и, возможно, записать простое сообщение в stderr.
     const char* msg_sigint = "\n[ServerMain] SIGINT received. Requesting shutdown.\n";
     const char* msg_sigterm = "\n[ServerMain] SIGTERM received. Requesting shutdown.\n";
     const char* msg_unknown = "\n[ServerMain] Unknown signal received. Requesting shutdown.\n";
-    ssize_t written_bytes = 0;
+    ssize_t written_bytes [[maybe_unused]] = 0; // Подавляем предупреждение о неиспользуемой переменной
 
     if (signum == SIGINT) {
         written_bytes = write(STDERR_FILENO, msg_sigint, strlen(msg_sigint));
@@ -38,8 +42,6 @@ void signalHandler(int signum) {
     } else {
         written_bytes = write(STDERR_FILENO, msg_unknown, strlen(msg_unknown));
     }
-    // Подавление предупреждения о неиспользуемой переменной (если very-Wextra)
-    (void)written_bytes; 
     g_server_should_stop.store(true);
 }
 
@@ -48,49 +50,49 @@ void setup_signal_handlers() {
     std::memset(&sa, 0, sizeof(sa));
     sa.sa_handler = signalHandler;
     sigemptyset(&sa.sa_mask); 
-    sa.sa_flags = 0; // Не SA_RESTART, чтобы прерывать блокирующие вызовы типа accept
+    sa.sa_flags = 0; 
 
     if (sigaction(SIGINT, &sa, nullptr) == -1) {
-        Logger::error("[ServerMain] Failed to set SIGINT handler. Errno: " + std::to_string(errno));
+        // Logger может быть еще не полностью готов, или это может быть вызвано из потока сигнала
+        // Безопаснее использовать perror или fprintf(stderr, ...)
+        perror("[ServerMain CritErr] Failed to set SIGINT handler");
+        // Logger::error("[ServerMain] Failed to set SIGINT handler. Errno: " + std::to_string(errno));
     }
     if (sigaction(SIGTERM, &sa, nullptr) == -1) {
-        Logger::error("[ServerMain] Failed to set SIGTERM handler. Errno: " + std::to_string(errno));
+        perror("[ServerMain CritErr] Failed to set SIGTERM handler");
+        // Logger::error("[ServerMain] Failed to set SIGTERM handler. Errno: " + std::to_string(errno));
     }
-    // Logger::info("[ServerMain] Signal handlers for SIGINT and SIGTERM set up."); // Логируем до или после вызова
 }
-#else
-// Для Windows можно использовать SetConsoleCtrlHandler
+#else // Windows
+#include <windows.h> // Для SetConsoleCtrlHandler
 BOOL WINAPI consoleCtrlHandler(DWORD ctrlType) {
-    // Logger::info("[ServerMain] Console control event (" + std::to_string(ctrlType) + ") received. Requesting server shutdown.");
-    // Вывод в консоль из обработчика может быть проблематичен, особенно если это shutdown event.
-    // Лучше минимизировать действия здесь.
     switch (ctrlType) {
     case CTRL_C_EVENT:
     case CTRL_BREAK_EVENT:
-    case CTRL_CLOSE_EVENT: // Пользователь закрывает консоль
-    case CTRL_LOGOFF_EVENT: // Пользователь выходит из системы
-    case CTRL_SHUTDOWN_EVENT: // Система выключается
+    case CTRL_CLOSE_EVENT: 
+    case CTRL_LOGOFF_EVENT: 
+    case CTRL_SHUTDOWN_EVENT: 
+        // Запись в stderr из обработчика консоли Windows может быть небезопасна,
+        // особенно при системном шатдауне. Установка флага - самое безопасное.
+        // fprintf(stderr, "\n[ServerMain] Console event (%lu). Requesting shutdown.\n", ctrlType);
         g_server_should_stop.store(true);
-        // Дать немного времени главному потоку среагировать, особенно при системном шатдауне.
-        // Sleep(5000); // Можно увеличить, если серверу нужно больше времени на остановку.
-        //              // Однако, система может принудительно завершить процесс раньше.
-        return TRUE; // Сообщаем системе, что мы обработали событие
+        // Даем серверу немного времени на корректное завершение перед тем, как система его убьет.
+        // Sleep(5000); // Это может быть слишком долго или непредсказуемо.
+        // Лучше, чтобы основной цикл сервера быстро реагировал на g_server_should_stop.
+        return TRUE; 
     default:
-        return FALSE; // Передаем необработанные события дальше
+        return FALSE; 
     }
 }
 #endif
 
 
 int main(int argc, char* argv[]) {
-    // Начальная инициализация логгера с дефолтными значениями,
-    // чтобы логировать парсинг аргументов и загрузку конфига.
-    // Будет переинициализирован позже с настройками из конфига/аргументов.
     Logger::init(LogLevel::INFO, DEFAULT_SERVER_LOG_FILE); 
     const std::string main_log_prefix = "[ServerMain] ";
 
     Logger::info(main_log_prefix + "=================================================");
-    Logger::info(main_log_prefix + "========== Запуск Сервера Базы Данных ==========");
+    Logger::info(main_log_prefix + "========== Database Server Starting Up ==========");
     Logger::info(main_log_prefix + "=================================================");
 
 #ifndef _WIN32
@@ -98,203 +100,185 @@ int main(int argc, char* argv[]) {
     Logger::info(main_log_prefix + "Signal handlers for SIGINT and SIGTERM set up (POSIX).");
 #else
     if (!SetConsoleCtrlHandler(consoleCtrlHandler, TRUE)) {
-        Logger::error(main_log_prefix + "Failed to set console control handler. Error: " + std::to_string(GetLastError()));
+        Logger::error(main_log_prefix + "Failed to set console control handler. Windows Error Code: " + std::to_string(GetLastError()));
     } else {
         Logger::info(main_log_prefix + "Console control handler set up for Windows.");
     }
 #endif
 
-    std::string server_executable_full_path;
+    std::string server_executable_full_path_str;
     if (argc > 0 && argv[0] != nullptr && argv[0][0] != '\0') {
         try {
-            server_executable_full_path = std::filesystem::weakly_canonical(std::filesystem::absolute(argv[0])).string();
-            Logger::debug(main_log_prefix + "Полный путь к исполняемому файлу сервера: '" + server_executable_full_path + "'");
+            // Используем weakly_canonical, так как absolute может выбросить исключение, если argv[0] невалиден
+            server_executable_full_path_str = std::filesystem::weakly_canonical(std::filesystem::absolute(std::filesystem::path(argv[0]))).string();
+            Logger::debug(main_log_prefix + "Server executable full path determined as: '" + server_executable_full_path_str + "'");
         } catch (const std::filesystem::filesystem_error& e_fs) {
-            Logger::warn(main_log_prefix + "Не удалось определить полный канонический путь к исполняемому файлу: " + e_fs.what() + ". Некоторые относительные пути могут разрешаться некорректно.");
-            // В этом случае server_executable_full_path останется пустым или неполным.
+            Logger::warn(main_log_prefix + "Could not determine full canonical path for server executable from argv[0] ('" + std::string(argv[0]) + "'): " + e_fs.what() + ". Relative path resolution for configs might be affected.");
         }
     } else {
-        Logger::warn(main_log_prefix + "Не удалось получить путь к исполняемому файлу из argv[0]. Относительные пути к конфигурационным файлам могут быть разрешены неверно.");
+        Logger::warn(main_log_prefix + "Could not get executable path from argv[0]. Relative path resolution for config files might be affected.");
     }
     
-    ServerConfig server_config; // Создаем объект конфига со значениями по умолчанию
-    // Путь к лог-файлу и уровень лога в server_config будут установлены из файла/аргументов,
-    // а затем Logger будет переинициализирован.
+    ServerConfig server_config; 
 
-    // Попытка загрузить конфигурацию из файла server.conf рядом с исполняемым файлом или в родительских директориях
-    std::string default_config_file_path_resolved;
-    if (!server_executable_full_path.empty()) {
-        std::filesystem::path exec_path_obj(server_executable_full_path);
-        std::vector<std::filesystem::path> search_dirs;
+    std::string default_config_file_path_to_try;
+    if (!server_executable_full_path_str.empty()) {
+        std::filesystem::path exec_path_obj(server_executable_full_path_str);
+        std::vector<std::filesystem::path> search_dirs_for_conf;
         if (exec_path_obj.has_parent_path()) {
-            search_dirs.push_back(exec_path_obj.parent_path()); // Директория исполняемого файла
+            search_dirs_for_conf.push_back(exec_path_obj.parent_path()); 
             if (exec_path_obj.parent_path().has_parent_path()) {
-                 search_dirs.push_back(exec_path_obj.parent_path().parent_path()); // Родительская директория (например, корень проекта, если бинарник в build/bin)
+                 search_dirs_for_conf.push_back(exec_path_obj.parent_path().parent_path()); 
                  if (exec_path_obj.parent_path().parent_path().has_parent_path()){
-                    // Еще на уровень выше (например, если бинарник в build/config/bin)
-                    search_dirs.push_back(exec_path_obj.parent_path().parent_path().parent_path());
+                    search_dirs_for_conf.push_back(exec_path_obj.parent_path().parent_path().parent_path());
                  }
             }
         }
-        
-        for (const auto& dir : search_dirs) {
+        // Добавляем CWD как место поиска по умолчанию, если ничего не найдено рядом с исполняемым файлом
+        try { search_dirs_for_conf.push_back(std::filesystem::current_path()); } catch(...){}
+
+
+        for (const auto& dir : search_dirs_for_conf) {
+            if (!std::filesystem::exists(dir)) continue; // Пропускаем несуществующие директории
             std::filesystem::path potential_conf_path = dir / "server.conf";
-            if (std::filesystem::exists(potential_conf_path)) {
-                default_config_file_path_resolved = potential_conf_path.string();
-                Logger::info(main_log_prefix + "Найден файл конфигурации по умолчанию: '" + default_config_file_path_resolved + "'");
+            if (std::filesystem::exists(potential_conf_path) && std::filesystem::is_regular_file(potential_conf_path)) {
+                default_config_file_path_to_try = potential_conf_path.string();
+                Logger::info(main_log_prefix + "Default configuration file found at: '" + default_config_file_path_to_try + "'");
                 break;
             }
         }
     }
 
-    if (!default_config_file_path_resolved.empty()) {
-        if (!server_config.loadFromFile(default_config_file_path_resolved)) {
-             // Ошибка уже залогирована в loadFromFile
-             Logger::warn(main_log_prefix + "Обнаружены ошибки при загрузке файла конфигурации по умолчанию '" + default_config_file_path_resolved + "'. Будут использованы значения по умолчанию и аргументы командной строки.");
+    if (!default_config_file_path_to_try.empty()) {
+        if (!server_config.loadFromFile(default_config_file_path_to_try)) {
+             Logger::warn(main_log_prefix + "Errors encountered while loading default configuration file '" + default_config_file_path_to_try + "'. Default values and command line arguments will be used/override.");
         }
     } else {
-        Logger::info(main_log_prefix + "Файл конфигурации по умолчанию 'server.conf' не найден в стандартных расположениях. Будут использованы значения по умолчанию и аргументы командной строки.");
+        Logger::info(main_log_prefix + "Default configuration file 'server.conf' not found in standard locations. Using internal defaults and command line arguments.");
     }
 
-    // Парсинг аргументов командной строки (они могут переопределить значения из файла или дефолтные)
-    // server_config.parseCommandLineArgs также может загрузить другой файл конфигурации, если указан -c
-    if (!server_config.parseCommandLineArgs(argc, argv, server_executable_full_path)) {
-        // parseCommandLineArgs возвращает false, если была запрошена справка (-h) или произошла ошибка парсинга.
-        // Если была справка, то это нормальное завершение.
-        bool help_requested = false;
+    if (!server_config.parseCommandLineArgs(argc, argv, server_executable_full_path_str)) {
+        bool help_was_requested = false;
         for (int i = 1; i < argc; ++i) {
             if (std::string(argv[i]) == "-h" || std::string(argv[i]) == "--help") {
-                help_requested = true;
+                help_was_requested = true;
                 break;
             }
         }
-        if (help_requested) {
-             Logger::info(main_log_prefix + "Запрошена справка по командной строке. Завершение работы.");
-             return 0; // Успешное завершение после вывода справки
+        if (help_was_requested) {
+             Logger::info(main_log_prefix + "Help was requested via command line. Exiting application.");
+             return 0; 
         } else {
-            Logger::error(main_log_prefix + "Ошибка при разборе аргументов командной строки. Завершение работы.");
-            // ServerConfig::printHelp(argv[0]); // parseCommandLineArgs должен был уже вывести справку при ошибке
-            return 1; // Ошибка парсинга
+            Logger::error(main_log_prefix + "Error parsing command line arguments. Exiting application.");
+            // printHelp уже должен был быть вызван из parseCommandLineArgs при ошибке
+            return 1; 
         }
     }
 
-    // Переинициализация логгера с финальными настройками из server_config
-    // Сначала разрешаем относительный путь к лог-файлу, если он указан
-    if (!server_config.log_file_path.empty() && 
-        !std::filesystem::path(server_config.log_file_path).is_absolute() && 
-        !server_executable_full_path.empty()) {
-        std::filesystem::path resolved_log_path;
+    // Переинициализация логгера с финальными настройками
+    std::string final_log_file_path = server_config.log_file_path;
+    if (!final_log_file_path.empty() && 
+        std::filesystem::path(final_log_file_path).is_relative() && 
+        !server_executable_full_path_str.empty()) {
         try {
-            // Предпочтительно разрешать относительно директории исполняемого файла,
-            // если только пользователь не указал абсолютный путь или если путь к исполняемому файлу неизвестен.
-            std::filesystem::path base_dir_for_log = std::filesystem::path(server_executable_full_path).parent_path();
-            resolved_log_path = (base_dir_for_log / server_config.log_file_path).lexically_normal();
-            // Обновляем путь в конфигурации перед инициализацией логгера.
-            // Логировать это изменение можно будет уже после переинициализации.
-            server_config.log_file_path = resolved_log_path.string();
-        } catch (const std::filesystem::filesystem_error& e_fs_log) {
-            // Если ошибка при конструировании пути, лучше вывести в cerr, т.к. логгер может быть не готов
-            std::cerr << main_log_prefix << "ПРЕДУПРЕЖДЕНИЕ: Ошибка при разрешении относительного пути к лог-файлу '" 
-                      << server_config.log_file_path << "': " << e_fs_log.what() 
-                      << ". Будет использован исходный (возможно, относительный) путь." << std::endl;
+            std::filesystem::path base_dir_for_log = std::filesystem::path(server_executable_full_path_str).parent_path();
+            final_log_file_path = (base_dir_for_log / final_log_file_path).lexically_normal().string();
+        } catch (const std::exception& e_fs_log_resolve) {
+            // Используем std::cerr, так как Logger еще не переинициализирован
+            std::cerr << main_log_prefix << "WARNING: Error resolving relative log file path '" 
+                      << server_config.log_file_path << "': " << e_fs_log_resolve.what() 
+                      << ". Using original (possibly relative) path." << std::endl;
+            final_log_file_path = server_config.log_file_path; // Оставляем как есть
         }
     }
-    Logger::init(server_config.log_level, server_config.log_file_path);
-    Logger::info(main_log_prefix + "Логгер сервера переинициализирован с финальными настройками.");
+    Logger::init(server_config.log_level, final_log_file_path); // Используем разрешенный путь
+    // Логируем это уже новым логгером
+    Logger::info(main_log_prefix + "Server logger re-initialized with final settings. Level: " + std::to_string(static_cast<int>(Logger::getLevel())) + ", File: '" + (final_log_file_path.empty() ? "Console Only" : final_log_file_path) + "'");
 
 
-    Logger::info(main_log_prefix + "Итоговая конфигурация сервера:");
-    Logger::info(main_log_prefix + "  Порт: " + std::to_string(server_config.port));
-    Logger::info(main_log_prefix + "  Файл тарифов: '" + server_config.tariff_file_path + "'");
-    Logger::info(main_log_prefix + "  Директория данных сервера (для LOAD/SAVE): '" + server_config.server_data_root_dir + "'");
-    Logger::info(main_log_prefix + "  Размер пула потоков: " + std::to_string(server_config.thread_pool_size));
-    Logger::info(main_log_prefix + "  Уровень лога: " + std::to_string(static_cast<int>(Logger::getLevel())));
-    Logger::info(main_log_prefix + "  Файл лога: '" + (server_config.log_file_path.empty() ? "Только консоль" : server_config.log_file_path) + "'");
+    Logger::info(main_log_prefix + "Final Server Configuration:");
+    Logger::info(main_log_prefix + "  Port: " + std::to_string(server_config.port));
+    Logger::info(main_log_prefix + "  Tariff File: '" + server_config.tariff_file_path + "'");
+    Logger::info(main_log_prefix + "  Server Data Root Dir (for LOAD/SAVE context): '" + server_config.server_data_root_dir + "' (Files will be in " + DEFAULT_SERVER_DATA_SUBDIR + " inside this)");
+    Logger::info(main_log_prefix + "  Thread Pool Size: " + std::to_string(server_config.thread_pool_size));
 
 
     Database db_instance;
     TariffPlan tariff_plan_instance;
-    QueryParser query_parser_instance; // Может быть создан внутри ServerCommandHandler или Server
+    QueryParser query_parser_instance; 
 
-    // Разрешение пути к файлу тарифов
-    std::string effectiveTariffPathToLoad = server_config.tariff_file_path;
-    if (effectiveTariffPathToLoad.empty()) { 
+    std::string effective_tariff_path_to_load = server_config.tariff_file_path;
+    if (effective_tariff_path_to_load.empty()) { 
          try {
-            // Если путь к исполняемому файлу известен, пытаемся найти data/tariff_default.cfg относительно него
-            std::string base_path_for_data_lookup = "."; // По умолчанию текущая директория
-            if (!server_executable_full_path.empty()) {
-                 base_path_for_data_lookup = server_executable_full_path;
+            std::string base_path_for_data_lookup = "."; 
+            if (!server_executable_full_path_str.empty()) {
+                 base_path_for_data_lookup = server_executable_full_path_str;
             }
-            effectiveTariffPathToLoad = getProjectDataPath("tariff_default.cfg", base_path_for_data_lookup.c_str()).string();
-            Logger::info(main_log_prefix + "Файл тарифов не указан в конфигурации, попытка загрузки тарифа по умолчанию: '" + effectiveTariffPathToLoad + "'");
+            // ИСПРАВЛЕНО: Используем FileUtils::getProjectDataPath
+            effective_tariff_path_to_load = FileUtils::getProjectDataPath("tariff_default.cfg", base_path_for_data_lookup.c_str()).string();
+            Logger::info(main_log_prefix + "Tariff file not specified in config, attempting to load default: '" + effective_tariff_path_to_load + "'");
         } catch (const std::exception& e_path) {
-            Logger::warn(main_log_prefix + "Не удалось определить путь к тарифу по умолчанию: " + std::string(e_path.what()) + ". Тарифы не будут загружены, если не указаны явно.");
-            effectiveTariffPathToLoad.clear(); // Убедимся, что путь пуст, если не удалось определить
+            Logger::warn(main_log_prefix + "Could not determine default tariff file path: " + std::string(e_path.what()) + ". Tariffs will not be loaded unless explicitly set by other means (not currently supported).");
+            effective_tariff_path_to_load.clear(); 
         }
     } else { 
-        // Если путь указан, но он относительный, и известен путь к исполняемому файлу, разрешаем его
-        if (!std::filesystem::path(effectiveTariffPathToLoad).is_absolute() && !server_executable_full_path.empty()) {
+        if (std::filesystem::path(effective_tariff_path_to_load).is_relative() && !server_executable_full_path_str.empty()) {
             try {
-                std::filesystem::path exec_dir = std::filesystem::path(server_executable_full_path).parent_path();
-                effectiveTariffPathToLoad = (exec_dir / effectiveTariffPathToLoad).lexically_normal().string();
-                Logger::info(main_log_prefix + "Относительный путь к файлу тарифов '" + server_config.tariff_file_path + "' разрешен в: '" + effectiveTariffPathToLoad + "'");
-            } catch (const std::filesystem::filesystem_error& e_fs_tariff) {
-                 Logger::warn(main_log_prefix + "Ошибка при разрешении относительного пути к файлу тарифов '" + server_config.tariff_file_path + "': " + e_fs_tariff.what() + ". Будет использован исходный относительный путь.");
-                 // effectiveTariffPathToLoad остается server_config.tariff_file_path
+                std::filesystem::path exec_dir = std::filesystem::path(server_executable_full_path_str).parent_path();
+                effective_tariff_path_to_load = (exec_dir / effective_tariff_path_to_load).lexically_normal().string();
+                Logger::info(main_log_prefix + "Relative tariff file path '" + server_config.tariff_file_path + "' resolved to: '" + effective_tariff_path_to_load + "'");
+            } catch (const std::exception& e_fs_tariff_resolve) {
+                 Logger::warn(main_log_prefix + "Error resolving relative tariff file path '" + server_config.tariff_file_path + "': " + e_fs_tariff_resolve.what() + ". Using original relative path.");
+                 // effective_tariff_path_to_load остается server_config.tariff_file_path
             }
         }
     }
 
-
-    if (!effectiveTariffPathToLoad.empty() && std::filesystem::exists(effectiveTariffPathToLoad)) {
+    if (!effective_tariff_path_to_load.empty() && std::filesystem::exists(effective_tariff_path_to_load)) {
         try {
-            if (tariff_plan_instance.loadFromFile(effectiveTariffPathToLoad)) {
-                Logger::info(main_log_prefix + "Успешно загружен тарифный план из \"" + effectiveTariffPathToLoad + "\"");
+            if (tariff_plan_instance.loadFromFile(effective_tariff_path_to_load)) {
+                Logger::info(main_log_prefix + "Successfully loaded tariff plan from \"" + effective_tariff_path_to_load + "\"");
             } else {
-                 // loadFromFile должен был выбросить исключение при серьезной ошибке,
-                 // но если он вернул false без исключения (что не должно быть по его контракту), логируем это.
-                 Logger::error(main_log_prefix + "Ошибка при загрузке тарифного плана из \"" + effectiveTariffPathToLoad + "\" (loadFromFile вернул false). Команда CALCULATE_CHARGES будет использовать нулевые тарифы.");
+                 // loadFromFile должен был выбросить исключение, но если нет (что не должно быть по контракту), логируем
+                 Logger::error(main_log_prefix + "Tariff plan loading from \"" + effective_tariff_path_to_load + "\" returned false without exception. CALCULATE_CHARGES will use zero tariffs.");
             }
         } catch (const std::exception& e_tariff_load) {
-            Logger::error(main_log_prefix + "Ошибка при загрузке тарифного плана из \"" + effectiveTariffPathToLoad + "\": " + e_tariff_load.what());
-            Logger::warn(main_log_prefix + "Команда CALCULATE_CHARGES будет использовать нулевые тарифы.");
-            // tariff_plan_instance останется с тарифами по умолчанию (нули)
+            Logger::error(main_log_prefix + "Error loading tariff plan from \"" + effective_tariff_path_to_load + "\": " + e_tariff_load.what());
+            Logger::warn(main_log_prefix + "CALCULATE_CHARGES command will use default (zero) tariffs.");
         }
     } else {
-        if (effectiveTariffPathToLoad.empty() && server_config.tariff_file_path.empty()) {
-             Logger::warn(main_log_prefix + "Файл тарифов не указан и не найден по умолчанию. Команда CALCULATE_CHARGES будет использовать нулевые тарифы.");
+        if (effective_tariff_path_to_load.empty() && server_config.tariff_file_path.empty()) {
+             Logger::warn(main_log_prefix + "Tariff file not specified and default not found. CALCULATE_CHARGES will use zero tariffs.");
         } else {
-            Logger::warn(main_log_prefix + "Файл тарифов не найден (указанный: '" + server_config.tariff_file_path +
-                         "', разрешенный/по умолчанию: '" + effectiveTariffPathToLoad +
-                         "'). Команда CALCULATE_CHARGES будет использовать нулевые тарифы.");
+             Logger::warn(main_log_prefix + "Tariff file not found (specified: '" + server_config.tariff_file_path +
+                         "', resolved/default: '" + effective_tariff_path_to_load +
+                         "'). CALCULATE_CHARGES will use zero tariffs.");
         }
-        // tariff_plan_instance останется с тарифами по умолчанию (нули)
     }
 
-    Server server(server_config, db_instance, tariff_plan_instance, query_parser_instance, server_executable_full_path);
+    // Передаем server_executable_full_path_str в конструктор Server
+    Server server(server_config, db_instance, tariff_plan_instance, query_parser_instance, server_executable_full_path_str);
     
     if (!server.start()) {
-        Logger::error(main_log_prefix + "КРИТИЧЕСКАЯ ОШИБКА: Не удалось запустить сервер на порту " + std::to_string(server_config.port) + ".");
-        Logger::info(main_log_prefix + "========== Сервер Базы Данных Завершил Работу (Ошибка Запуска) ==========");
+        Logger::error(main_log_prefix + "CRITICAL ERROR: Failed to start server on port " + std::to_string(server_config.port) + ".");
+        Logger::info(main_log_prefix + "========== Database Server Shutting Down (Startup Error) ==========");
         return 1;
     }
 
-    Logger::info(main_log_prefix + "Сервер успешно запущен. Ожидание соединений или сигнала завершения (Ctrl+C / SIGINT / SIGTERM)...");
+    Logger::info(main_log_prefix + "Server successfully started. Waiting for connections or shutdown signal (Ctrl+C / SIGINT / SIGTERM)...");
 
-    // Основной цикл ожидания сигнала остановки
     while (!g_server_should_stop.load()) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(200)); // Проверяем флаг периодически
-        // Дополнительная проверка, если сервер мог остановиться по внутренней причине
-        if (!server.isRunning() && !g_server_should_stop.load()) {
-            Logger::warn(main_log_prefix + "Обнаружено, что экземпляр сервера неактивен (server.isRunning() == false), но сигнал остановки не получен. Инициирую остановку.");
+        std::this_thread::sleep_for(std::chrono::milliseconds(200)); 
+        if (!server.isRunning() && !g_server_should_stop.load()) { // Дополнительная проверка
+            Logger::warn(main_log_prefix + "Server instance reported as not running, but no external stop signal received. Initiating shutdown.");
             g_server_should_stop.store(true); 
         }
     }
 
-    Logger::info(main_log_prefix + "Получен сигнал остановки или сервер завершил работу по другой причине. Инициирована процедура остановки экземпляра Server...");
+    Logger::info(main_log_prefix + "Shutdown signal received or server stopped internally. Initiating Server::stop()...");
     server.stop(); 
-    Logger::info(main_log_prefix + "Экземпляр Server остановлен.");
+    Logger::info(main_log_prefix + "Server instance stopped.");
 
-    Logger::info(main_log_prefix + "========== Сервер Базы Данных Завершил Работу ==========");
+    Logger::info(main_log_prefix + "========== Database Server Successfully Shut Down ==========");
     return 0;
 }
